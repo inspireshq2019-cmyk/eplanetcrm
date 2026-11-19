@@ -1,5 +1,6 @@
 import "server-only";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { dbConfig } from "../../db/connection";
 
 declare global {
   // Reuse one pool across hot reloads in development.
@@ -8,11 +9,7 @@ declare global {
 
 export const pool =
   globalThis.__eplanetPool ??
-  new Pool({
-    connectionString: process.env.DATABASE_URL,
-    max: 10,
-    ssl: process.env.DATABASE_SSL === "1" ? { rejectUnauthorized: false } : undefined,
-  });
+  new Pool({ ...dbConfig("app"), max: process.env.VERCEL ? 3 : 10, idleTimeoutMillis: 10_000 });
 if (process.env.NODE_ENV !== "production") globalThis.__eplanetPool = pool;
 
 // Return dates as plain strings (YYYY-MM-DD) and numerics as numbers.

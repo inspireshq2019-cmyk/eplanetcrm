@@ -5,7 +5,9 @@ import { dirname, resolve, sep } from "node:path";
 // Files are stored in Supabase Storage when it is configured (production),
 // otherwise on the local disk (development). The bucket must be private.
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+// Supabase accepts its secret key in both headers; older service-role keys work the same way.
+const auth = () => ({ apikey: SUPABASE_KEY!, authorization: `Bearer ${SUPABASE_KEY}` });
 const BUCKET = process.env.STORAGE_BUCKET ?? "documents";
 const LOCAL_DIR = resolve(/*turbopackIgnore: true*/ process.env.UPLOAD_DIR ?? "./uploads");
 
@@ -22,7 +24,7 @@ export async function putFile(key: string, data: Buffer, contentType: string) {
   if (useSupabase()) {
     const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${key}`, {
       method: "POST",
-      headers: { authorization: `Bearer ${SUPABASE_KEY}`, "content-type": contentType, "x-upsert": "false" },
+      headers: { ...auth(), "content-type": contentType, "x-upsert": "false" },
       body: new Uint8Array(data),
     });
     if (!r.ok) throw new Error(`Storage upload failed (${r.status})`);
@@ -35,7 +37,7 @@ export async function putFile(key: string, data: Buffer, contentType: string) {
 
 export async function getFile(key: string): Promise<Buffer> {
   if (useSupabase()) {
-    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${key}`, { headers: { authorization: `Bearer ${SUPABASE_KEY}` } });
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${key}`, { headers: auth() });
     if (!r.ok) throw new Error(`Storage download failed (${r.status})`);
     return Buffer.from(await r.arrayBuffer());
   }
@@ -47,7 +49,7 @@ export async function removeFile(key: string): Promise<void> {
   if (useSupabase()) {
     const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}`, {
       method: "DELETE",
-      headers: { authorization: `Bearer ${SUPABASE_KEY}`, "content-type": "application/json" },
+      headers: { ...auth(), "content-type": "application/json" },
       body: JSON.stringify({ prefixes: [key] }),
     });
     if (!r.ok && r.status !== 404) throw new Error(`Storage delete failed (${r.status})`);

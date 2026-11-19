@@ -3,6 +3,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "pg";
+import { dbConfig } from "./connection";
 import { BRANCHES, COUNTRIES, DHAKA_STAFF, INSURERS, ROLES, WORKFLOWS } from "./seed-data";
 
 const DIR = __dirname;
@@ -35,7 +36,7 @@ const COUNTRY_BY_NAME: Record<string, string> = {
 const DEST_TO_COUNTRY: Record<string, string> = { AU: "AU", UK: "GB", CA: "CA", US: "US", NZ: "NZ" };
 
 async function main() {
-  const db = new Client({ connectionString: process.env.DATABASE_URL });
+  const db = new Client(dbConfig("setup"));
   await db.connect();
   await db.query("create table if not exists schema_migrations (version text primary key, applied_at timestamptz not null default now())");
 
@@ -139,6 +140,23 @@ async function main() {
     (select count(*) from workflows) w, (select count(*) from partners) p, (select count(*) from courses) c`);
   console.log("ready:", counts.rows[0], `(+${np} partners, +${nc} courses this run)`);
   await db.end();
+
+  // Private file storage for student documents (Supabase). Created once; an existing bucket is left alone.
+  const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+  if (url && key) {
+    const bucket = process.env.STORAGE_BUCKET ?? "documents";
+    const r = await fetch(`${url}/storage/v1/bucket`, {
+      method: "POST", headers: { apikey: key, authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ id: bucket, name: bucket, public: false, file_size_limit: 15 * 1024 * 1024 }),
+    });
+    const body = await r.text();
+    if (r.ok) console.log(`created private storage bucket "${bucket}"`);
+    else if (/already exists|duplicate/i.test(body)) console.log(`storage bucket "${bucket}" already exists`);
+    else throw new Error(`Couldn't create the storage bucket (${r.status}): ${body.slice(0, 200)}`);
+    const check = await fetch(`${url}/storage/v1/bucket/${bucket}`, { headers: { apikey: key, authorization: `Bearer ${key}` } });
+    const info = (await check.json().catch(() => ({}))) as { public?: boolean };
+    if (info.public) throw new Error(`Storage bucket "${bucket}" is public. Make it private in Supabase before going live.`);
+  }
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
