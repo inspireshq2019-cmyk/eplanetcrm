@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local build output and uploaded student files (never commit)
+/.next-build/
+/uploads/
