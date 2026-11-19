@@ -4,10 +4,12 @@ import { safeNext } from "@/lib/safe-next";
 import { redirect } from "next/navigation";
 import { q, q1 } from "@/lib/db";
 import { createSession, destroySession } from "@/lib/auth";
+import { demoOn, demoUnlocked, tryDemoCode } from "@/lib/demo";
 
-/** Test sign-in without Google. Only works when DEMO_LOGIN=1, which must be off on the live system. */
+/** Test sign-in without Google. Only works when DEMO_LOGIN=1 (and, on the internet, after the test code). */
 export async function demoSignIn(formData: FormData) {
-  if (process.env.DEMO_LOGIN !== "1") redirect("/login?error=demo_off");
+  if (!demoOn()) redirect("/login?error=demo_off");
+  if (!(await demoUnlocked())) redirect("/login?error=demo_code");
   const id = String(formData.get("user_id") ?? "");
   const u = await q1<{ id: string }>("select id from users where id=$1 and active", [id]);
   if (!u) redirect("/login?error=no_account");
@@ -20,4 +22,12 @@ export async function demoSignIn(formData: FormData) {
 export async function signOut() {
   await destroySession();
   redirect("/login");
+}
+
+/** Checks the test code before the staff list is shown. Wrong codes are slowed down. */
+export async function enterDemoCode(formData: FormData) {
+  const next = safeNext(String(formData.get("next") ?? "/"));
+  const ok = await tryDemoCode(String(formData.get("code") ?? "").slice(0, 200));
+  if (!ok) { await new Promise((r) => setTimeout(r, 1500)); redirect(`/login?error=demo_code${next !== "/" ? `&next=${encodeURIComponent(next)}` : ""}`); }
+  redirect(next === "/" ? "/login" : `/login?next=${encodeURIComponent(next)}`);
 }

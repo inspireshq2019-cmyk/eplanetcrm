@@ -1,3 +1,4 @@
+import { demoOn } from "@/lib/demo";
 import { Sidebar, type NavItem } from "@/components/nav";
 import { can, requireUser, scopeWhere } from "@/lib/auth";
 import { q1 } from "@/lib/db";
@@ -34,6 +35,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Sidebar items={items} user={{ name: user.name, role: user.roleName, branch: user.primaryBranchName }} signOut={signOut} />
       <div className="lg:pl-60">
         <main className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8 py-6 lg:py-8" style={{ paddingLeft: "max(16px, env(safe-area-inset-left))", paddingRight: "max(16px, env(safe-area-inset-right))" }}>
+          {demoOn() && (
+            <p role="status" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+              <b>Test mode.</b> Anyone with the test code can sign in as any staff member. Use made-up students only, and switch test mode off (remove DEMO_LOGIN) before real student data goes in.
+            </p>
+          )}
           {children}
         </main>
       </div>

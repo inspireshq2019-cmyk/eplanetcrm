@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { q } from "@/lib/db";
-import { demoSignIn } from "./actions";
+import { demoSignIn, enterDemoCode } from "./actions";
+import { demoMisconfigured, demoOn, demoUnlocked } from "@/lib/demo";
 import { safeNext } from "@/lib/safe-next";
 
 export const metadata = { title: "Sign in" };
@@ -13,12 +14,14 @@ const ERRORS: Record<string, string> = {
   unverified: "Google says this email address isn't verified.",
   google_not_configured: "Google sign-in isn't set up yet. The administrator needs to add the Google sign-in keys to the hosting settings.",
   demo_off: "Test sign-in is switched off on this server.",
+  demo_code: "That test code isn't right. Ask the administrator for the current code.",
 };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string; next?: string }> }) {
   const { error, next: rawNext } = await searchParams;
   const next = safeNext(rawNext);
-  const demo = process.env.DEMO_LOGIN === "1";
+  const demoAvailable = demoOn();
+  const demo = demoAvailable && (await demoUnlocked());
   const users = demo
     ? await q<{ id: string; name: string; title: string | null; role_name: string; branch: string }>(
         `select u.id, u.name, u.title, r.name role_name, b.name branch from users u join roles r on r.key=u.role_key
@@ -48,6 +51,19 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             Sign in with Google
           </a>
 
+          {demoMisconfigured() && (
+            <p className="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">Test sign-in is switched on but has no test code. Add a DEMO_PASSCODE of at least 12 characters in the hosting settings.</p>
+          )}
+          {demoAvailable && !demo && (
+            <form action={enterDemoCode} className="mt-8 card p-5">
+              <input type="hidden" name="next" value={next} />
+              <p className="text-sm font-semibold text-navy">Test sign-in</p>
+              <p className="text-xs text-slate mt-1">For testing before Google sign-in is set up. Enter the test code from the administrator.</p>
+              <label htmlFor="code" className="label mt-4">Test code</label>
+              <input id="code" name="code" type="password" className="input" autoComplete="off" required />
+              <button className="btn btn-primary w-full mt-4" type="submit">Continue</button>
+            </form>
+          )}
           {demo && (
             <form action={demoSignIn} className="mt-8 card p-5">
               <input type="hidden" name="next" value={next} />
