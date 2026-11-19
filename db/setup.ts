@@ -77,6 +77,20 @@ async function main() {
       [`${slug}@pending.eplanetintl.invalid`, s.name, s.title, s.role, dhk]);
   }
 
+  // The owner's real work email, so the first person can sign in and add everyone else (Settings › Staff).
+  const ownerEmail = (process.env.OWNER_EMAIL ?? "").trim().toLowerCase();
+  if (ownerEmail) {
+    const domains = (process.env.ALLOWED_EMAIL_DOMAINS ?? "").split(",").map((d) => d.trim().toLowerCase()).filter(Boolean);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail) || (domains.length && !domains.includes(ownerEmail.split("@")[1])))
+      throw new Error(`OWNER_EMAIL must be a work address on ${domains.join(" or ") || "your domain"}.`);
+    const taken = await db.query("select 1 from users where lower(email)=$1", [ownerEmail]);
+    if (!taken.rowCount) {
+      const r = await db.query(
+        `update users set email=$1 where id=(select id from users where role_key='owner' and email like '%.invalid' order by created_at limit 1)`, [ownerEmail]);
+      console.log(r.rowCount ? `owner account set to ${ownerEmail}` : "no owner account waiting for an email");
+    }
+  }
+
   // Staff photos already published on the website team page.
   const PHOTOS: Record<string, string> = {
     "Shah Zaman Bhuiyan": "team-shah-zaman-bhuiyan", "Abdullah Al Masum": "team-abdullah-al-masum", "Md. Saiful Adnan": "team-saiful-adnan",

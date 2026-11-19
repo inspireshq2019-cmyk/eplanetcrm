@@ -11,7 +11,7 @@ const ERRORS: Record<string, string> = {
   state: "The sign-in took too long or was interrupted. Please try again.",
   google: "Google didn't confirm the sign-in. Please try again.",
   unverified: "Google says this email address isn't verified.",
-  google_not_configured: "Google sign-in isn't set up on this server yet. Use the test sign-in below, or ask the admin to add the Google keys.",
+  google_not_configured: "Google sign-in isn't set up yet. The administrator needs to add the Google sign-in keys to the hosting settings.",
   demo_off: "Test sign-in is switched off on this server.",
 };
 
