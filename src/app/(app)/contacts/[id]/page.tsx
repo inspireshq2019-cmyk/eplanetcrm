@@ -205,7 +205,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
                 <tbody>{docs.map((d) => (
                   <tr key={d.id}>
                     <td><a href={`/api/documents/${d.id}`} target="_blank" rel="noopener">{d.filename}</a><div className="text-xs text-slate">{d.size_bytes ? `${Math.ceil(d.size_bytes / 1024)} KB` : ""}</div></td>
-                    <td className="capitalize">{d.doc_type.replace(/_/g, " ")}</td>
+                    <td className="capitalize">{d.doc_type === "cv" ? "CV" : d.doc_type === "ielts" ? "English test" : d.doc_type.replace(/_/g, " ")}</td>
                     <td>{d.expiry ? date(d.expiry) : "—"}</td>
                     <td className="whitespace-nowrap">{ago(d.created_at)}<div className="text-xs text-slate">{d.by_student ? "Student (upload link)" : d.uploader}</div></td>
                     <td>{d.verified_at ? <span className="badge badge-ok">Checked</span> : linkStaff ? (
