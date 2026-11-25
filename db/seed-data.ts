@@ -68,23 +68,27 @@ export const PERMISSIONS = {
   "import.run": "Import data (e.g. from Agentcis)",
   "leads.connect": "Connect the branch's Facebook pages and Google Ads lead forms",
   "forms.manage": "Create event registration forms and QR codes",
+  "admissions.manage": "Work the central admissions queue and submit applications to institutions",
+  "subagents.manage": "Manage sub-agent agencies and their logins",
   "audit.view": "See the audit log",
 } as const;
 export type Permission = keyof typeof PERMISSIONS;
 const ALL = Object.keys(PERMISSIONS) as Permission[];
 const without = (...p: Permission[]) => ALL.filter((x) => !p.includes(x));
 
-export const ROLES: { key: string; name: string; scope: "all" | "country" | "branch" | "own"; description: string; permissions: Permission[] }[] = [
+export const ROLES: { key: string; name: string; scope: "all" | "country" | "branch" | "own" | "agent"; description: string; permissions: Permission[] }[] = [
   { key: "owner", name: "Owner / Super admin", scope: "all", description: "Everything, in every branch and country.", permissions: ALL },
   { key: "country_director", name: "Country Director", scope: "country", description: "Everything in their country's branches, including staff accounts.", permissions: without("settings.system") },
-  { key: "branch_head", name: "Branch Head", scope: "branch", description: "Runs a branch: all students, applications, finance and reports for that branch.", permissions: without("settings.system", "import.run") },
-  { key: "operations_manager", name: "Operations Manager", scope: "branch", description: "Day-to-day operations of the branch, without voiding invoices or managing staff.", permissions: without("settings.system", "settings.users", "finance.void", "contacts.delete", "audit.view", "import.run") },
+  { key: "branch_head", name: "Branch Head", scope: "branch", description: "Runs a branch: all students, applications, finance and reports for that branch.", permissions: without("settings.system", "import.run", "admissions.manage") },
+  { key: "operations_manager", name: "Operations Manager", scope: "branch", description: "Day-to-day operations of the branch, without voiding invoices or managing staff.", permissions: without("settings.system", "settings.users", "finance.void", "contacts.delete", "audit.view", "import.run", "admissions.manage", "subagents.manage") },
   { key: "counsellor", name: "Counsellor", scope: "own", description: "Their own students plus unassigned leads in their branch.", permissions: ["contacts.view", "contacts.create", "contacts.edit", "applications.edit", "documents.manage", "visa.view", "checkin.manage", "oshc.manage"] },
   { key: "admissions", name: "Admissions & Compliance", scope: "branch", description: "Applications, documents and checklists for the whole branch.", permissions: ["contacts.view", "contacts.edit", "contacts.sensitive", "applications.edit", "documents.manage", "visa.view", "tasks.all", "reports.view", "partners.edit"] },
   { key: "migration_agent", name: "Registered Migration Agent (OMARA)", scope: "branch", description: "Visa cases. Add other branches to their account to work on students from those branches.", permissions: ["contacts.view", "contacts.edit", "contacts.sensitive", "documents.manage", "visa.view", "visa.edit", "applications.edit", "tasks.all"] },
   { key: "ielts_trainer", name: "IELTS / PTE Trainer", scope: "branch", description: "Classes, attendance and mock-test scores.", permissions: ["contacts.view", "classes.manage"] },
   { key: "finance", name: "Accounts & Finance", scope: "branch", description: "Invoices, payments, receipts and commissions.", permissions: ["contacts.view", "finance.view", "finance.edit", "reports.view", "oshc.manage"] },
   { key: "marketing", name: "Digital Marketing", scope: "branch", description: "Adds and views leads, connects the branch's ad lead forms and sees lead reports; no finance or documents.", permissions: ["contacts.view", "contacts.create", "reports.view", "leads.connect", "forms.manage"] },
+  { key: "central_admissions", name: "Central Admissions", scope: "all", description: "The head-office admission team: receives applications from every branch and sub-agent, checks them and submits them to institutions.", permissions: ["contacts.view", "contacts.edit", "contacts.sensitive", "applications.edit", "documents.manage", "partners.edit", "admissions.manage", "reports.view"] },
+  { key: "sub_agent", name: "Sub-agent", scope: "agent", description: "An outside agency. Sees only its own students and applications, and sends applications to the admission team.", permissions: ["contacts.view", "contacts.create", "contacts.edit", "applications.edit", "documents.manage"] },
   { key: "front_desk", name: "Front Desk", scope: "branch", description: "Welcomes visitors, runs the check-in queue and books appointments.", permissions: ["contacts.view", "contacts.create", "checkin.manage"] },
 ];
 

@@ -13,7 +13,7 @@ export default async function NewContact({ searchParams }: { searchParams: Promi
   const [first, ...rest] = (sp.name ?? "").trim().split(/\s+/);
   return (
     <>
-      <PageHeader title="Add a lead" back={{ href: "/contacts", label: "Students & leads" }} subtitle="Fields marked * are required. You can add results, documents and applications after saving." />
+      <PageHeader title={user.scope === "agent" ? "Add a student" : "Add a lead"} back={{ href: "/contacts", label: user.scope === "agent" ? "My students" : "Students & leads" }} subtitle="Fields marked * are required. You can add results, documents and applications after saving." />
       <ContactForm
         action={createContact}
         mode="new"
@@ -22,6 +22,7 @@ export default async function NewContact({ searchParams }: { searchParams: Promi
         canOwn={user.scope !== "own"}
         canSensitive={false}
         defaultBranchId={user.primaryBranchId}
+        agent={user.scope === "agent"}
         values={{ first_name: first || undefined, last_name: rest.join(" ") || null, phone: sp.phone ?? null, source: sp.checkin ? "walk_in" : undefined }}
       />
     </>

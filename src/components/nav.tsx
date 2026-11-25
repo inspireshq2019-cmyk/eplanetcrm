@@ -9,6 +9,7 @@ export type NavItem = { href: string; label: string; icon: string; badge?: numbe
 const ICONS: Record<string, string> = {
   home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z",
   door: "M6 3h9l3 3v15H6zM14 12h.01",
+  inbox: "M4 13l2.5-8h11L20 13M4 13v6h16v-6M4 13h4.5l1 2h5l1-2H20",
   qr: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2M14 18h2M18 18h2v2h-2z",
   people: "M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0zM4 21c0-3.3 3.6-6 8-6s8 2.7 8 6",
   flow: "M4 6h7v4H4zM13 14h7v4h-7zM7.5 10v4a2 2 0 0 0 2 2H13",

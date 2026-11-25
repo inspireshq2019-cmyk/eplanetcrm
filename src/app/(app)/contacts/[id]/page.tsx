@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { can, requireUser } from "@/lib/auth";
+import { can, getCurrentUser, requireUser } from "@/lib/auth";
 import { loadContactForUser } from "@/lib/access";
 import { q, q1 } from "@/lib/db";
 import { visibleStaff, EDU_LEVELS, FIELDS, TESTS } from "@/lib/lookups";
@@ -24,6 +24,9 @@ type Contact = {
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Only name the page for people allowed to see this student.
+  const user = await getCurrentUser();
+  if (!user || !(await loadContactForUser(user, id))) return { title: "Student" };
   const c = await q1<{ name: string }>("select first_name || ' ' || coalesce(last_name,'') name from contacts where id::text=$1", [id]);
   return { title: c?.name ?? "Student" };
 }
@@ -63,6 +66,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
   ]);
 
   const name = `${c.first_name} ${c.last_name ?? ""}`.trim();
+  const agent = user.scope === "agent"; // sub-agents see the student's file and applications, not the branch's internal work
   const edit = can(user, "contacts.edit");
   const showPassport = reveal === "1" && can(user, "contacts.sensitive");
   const masked = c.passport_no ? c.passport_no.replace(/.(?=.{3})/g, "•") : null;
@@ -85,7 +89,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
       {c.stage === "archived" && c.lost_reason && <div className="mb-4"><Notice tone="warn">Archived: {c.lost_reason}</Notice></div>}
       {pExp !== null && pExp < 180 && <div className="mb-4"><Notice tone={pExp < 0 ? "red" : "warn"}>{pExp < 0 ? "The passport has expired." : `The passport expires in ${pExp} days (${date(c.passport_expiry)}). Most visas need at least 6 months' validity.`}</Notice></div>}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+      <div className={agent ? "grid gap-6" : "grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]"}>
         <div className="grid min-w-0 content-start gap-6">
           <Card title="Details">
             <div className="grid gap-6 md:grid-cols-2">
@@ -213,7 +217,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
             )}
           </Card>
 
-          {(visas.length > 0 || can(user, "visa.edit")) && (
+          {!agent && (visas.length > 0 || can(user, "visa.edit")) && (
             <Card title="Visa cases" actions={can(user, "visa.edit") ? <Link href={`/visa/new?contact=${c.id}`} className="btn btn-sm">Open visa case</Link> : null} pad={false}>
               {visas.length ? (
                 <TableWrap><table className="tbl"><thead><tr><th>Ref</th><th>Visa</th><th>Status</th><th>Lodged</th><th>Expiry</th><th>Agent</th></tr></thead>
@@ -225,7 +229,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
             </Card>
           )}
 
-          {(oshc.length > 0 || classes.length > 0) && (
+          {!agent && (oshc.length > 0 || classes.length > 0) && (
             <div className="grid gap-6 lg:grid-cols-2">
               <Card title="OSHC">
                 {oshc.length ? <ul className="space-y-2 text-sm">{oshc.map((o) => <li key={o.id}><b>{o.insurer ?? "Insurer"}</b> · {o.cover_type} · <span className="capitalize">{o.status}</span><span className="block text-xs text-slate">{date(o.start_date)} – {date(o.end_date)} · {money(o.premium, o.currency)}</span></li>)}</ul> : <p className="text-sm text-slate">No OSHC policies.</p>}
@@ -246,7 +250,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
           )}
         </div>
 
-        <aside className="grid min-w-0 content-start gap-6">
+        {!agent && <aside className="grid min-w-0 content-start gap-6">
           <Card title="Counsellor and status">
             <div className="flex items-center gap-3">
               <Avatar name={c.owner ?? "?"} photo={c.owner_photo} size={40} />
@@ -320,7 +324,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
               <ConfirmButton className="text-xs font-semibold text-red underline" confirmLabel="Click again to delete permanently">Delete this record</ConfirmButton>
             </form>
           )}
-        </aside>
+        </aside>}
       </div>
     </>
   );

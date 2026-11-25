@@ -9,6 +9,7 @@ import { Card, Dl, Field, Notice, PageHeader, TableWrap } from "@/components/ui"
 import { CHANNEL_LABEL, DEST_LABEL, date, dateTime, money } from "@/lib/format";
 import { moveStage, setChecklist, updateApplication } from "../actions";
 import { uploadDocument, verifyDocument } from "../../documents/actions";
+import { AdmissionsPanel, MessagesCard } from "./admissions-panel";
 
 export const metadata = { title: "Application" };
 
@@ -20,9 +21,10 @@ function commissionEligibility(a: { destination: string | null; onshore_transfer
   return { ok: false as const, note: "Onshore transfer in Australia: the provider can't pay commission for this student. Charge the student a service fee instead." };
 }
 
-export default async function ApplicationPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ emailed?: string }> }) {
   const user = await requireUser();
   const { id } = await params;
+  const { emailed } = await searchParams;
   if (!(await loadApplicationForUser(user, id))) notFound();
 
   const a = (await q1<{
@@ -30,13 +32,14 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
     workflow_id: number; workflow: string; stage_id: number; stage: string; destination: string | null; partner_id: number | null; partner: string | null;
     course_id: number | null; course: string | null; course_url: string | null; intake: string | null; channel: string; student_id_at_provider: string | null;
     tuition_fee: number | null; fee_currency: string | null; onshore_transfer: boolean; accepted_date: string | null; status: string; lost_reason: string | null; created_at: string;
-    commission_pct: number | null;
+    commission_pct: number | null; adm_status: string | null; adm_request: string | null; adm_officer_id: string | null; adm_officer: string | null; adm_sent_at: string | null;
   }>(
-    `select a.*, c.first_name || ' ' || coalesce(c.last_name,'') contact_name, c.ref contact_ref, b.name branch, b.timezone branch_tz, u.name owner,
+    `select a.*, ao.name adm_officer, c.first_name || ' ' || coalesce(c.last_name,'') contact_name, c.ref contact_ref, b.name branch, b.timezone branch_tz, u.name owner,
             w.name workflow, s.name stage, p.name partner, coalesce(co.title, a.course_title) course, co.url course_url,
             (select commission_pct from partner_agreements pa where pa.partner_id=a.partner_id and (pa.valid_to is null or pa.valid_to >= current_date) order by valid_from desc nulls last limit 1) commission_pct
        from applications a join contacts c on c.id=a.contact_id join branches b on b.id=a.branch_id left join users u on u.id=a.owner_id
        join workflows w on w.id=a.workflow_id join workflow_stages s on s.id=a.stage_id left join partners p on p.id=a.partner_id left join courses co on co.id=a.course_id
+       left join users ao on ao.id=a.adm_officer_id
       where a.id=$1`, [id]))!;
 
   const [stages, history, checklist, docs, staff] = await Promise.all([
@@ -54,7 +57,9 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
   const progress = stages.filter((s) => !s.outcome || s.outcome === "won");
   const done = checklist.filter((c) => c.status !== "pending").length;
   const elig = commissionEligibility(a);
-  const edit = can(user, "applications.edit");
+  const agent = user.scope === "agent";
+  const edit = can(user, "applications.edit") && !agent; // sub-agents don't move steps or change details; admissions does
+  const verify = can(user, "documents.manage") && !agent;
   const est = a.tuition_fee && a.commission_pct ? (a.tuition_fee * a.commission_pct) / 100 : null;
 
   return (
@@ -62,12 +67,15 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
       <PageHeader
         back={{ href: `/contacts/${a.contact_id}`, label: `${a.contact_name} (${a.contact_ref})` }}
         title={<span className="flex flex-wrap items-center gap-3">{a.ref}: {a.partner ?? "Institution"}<span className={`badge ${a.status === "won" ? "badge-ok" : a.status === "lost" ? "badge-grey" : ""}`}>{a.stage}</span></span>}
-        subtitle={<>{a.course ?? "Course not set"} · {DEST_LABEL[a.destination ?? ""] ?? a.destination} · {a.intake ?? "intake not set"} · {a.branch}</>}
+        subtitle={<>{a.course ?? "Course not set"} · {DEST_LABEL[a.destination ?? ""] ?? a.destination} · {a.intake ?? "intake not set"}{agent ? "" : ` · ${a.branch}`}</>}
         actions={can(user, "finance.edit") ? <Link className="btn" href={`/finance/new?application=${a.id}`}>Commission or fee invoice</Link> : null}
       />
-      {!elig.ok && <div className="mb-4"><Notice tone="red">{elig.note}</Notice></div>}
-      {elig.ok && elig.note && <div className="mb-4"><Notice tone="ok">{elig.note}</Notice></div>}
+      {!agent && !elig.ok && <div className="mb-4"><Notice tone="red">{elig.note}</Notice></div>}
+      {!agent && elig.ok && elig.note && <div className="mb-4"><Notice tone="ok">{elig.note}</Notice></div>}
       {a.status === "lost" && a.lost_reason && <div className="mb-4"><Notice tone="warn">Closed: {a.lost_reason}</Notice></div>}
+
+      {emailed && <div className="mb-4"><Notice tone="ok">Application pack emailed from the admissions mailbox.</Notice></div>}
+      <AdmissionsPanel user={user} a={a} pendingDocs={checklist.filter((c) => c.status === "pending" && !["offer", "coe", "cas", "pal", "oshc"].includes(c.doc_type ?? "")).length} />
 
       <Card title="Progress" className="mb-6">
         <ol className="flex flex-wrap gap-2" aria-label="Application steps">
@@ -77,7 +85,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
               <li key={s.id} className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${
                 state === "done" ? "border-ok/30 bg-ok-tint text-ok" : state === "now" ? "border-navy bg-navy text-white" : "border-line bg-white text-slate"}`}
                 aria-current={state === "now" ? "step" : undefined}>
-                {state === "done" ? "✓ " : ""}{s.name}{s.commission_trigger ? " · commission" : ""}
+                {state === "done" ? "✓ " : ""}{s.name}{s.commission_trigger && !agent ? " · commission" : ""}
               </li>);
           })}
         </ol>
@@ -110,7 +118,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
                       <form action={setChecklist} className="flex gap-1">
                         <input type="hidden" name="id" value={a.id} /><input type="hidden" name="item_id" value={c.item_id} />
                         <select name="status" defaultValue={c.status} className="select !min-h-0 !py-1 !text-xs" aria-label={`Status of ${c.name}`}>
-                          <option value="pending">Pending</option><option value="received">Received</option><option value="verified">Checked</option><option value="not_needed">Not needed</option>
+                          <option value="pending">Pending</option><option value="received">Received</option>{verify && <><option value="verified">Checked</option><option value="not_needed">Not needed</option></>}
                         </select>
                         <button className="btn btn-sm">Set</button>
                       </form>
@@ -136,7 +144,7 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
               <ul className="divide-y divide-line">{docs.map((d) => (
                 <li key={d.id} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
                   <span><a className="font-semibold text-navy" href={`/api/documents/${d.id}`} target="_blank" rel="noopener">{d.filename}</a> <span className="text-xs text-slate">{d.doc_type.replace(/_/g, " ")}</span></span>
-                  {d.verified_at ? <span className="badge badge-ok">Checked</span> : can(user, "documents.manage") && <form action={verifyDocument}><input type="hidden" name="id" value={d.id} /><button className="btn btn-sm">Mark checked</button></form>}
+                  {d.verified_at ? <span className="badge badge-ok">Checked</span> : verify && <form action={verifyDocument}><input type="hidden" name="id" value={d.id} /><button className="btn btn-sm">Mark checked</button></form>}
                 </li>))}</ul>
             </Card>
           )}
@@ -148,8 +156,15 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
         </div>
 
         <aside className="grid min-w-0 content-start gap-6">
+          <MessagesCard user={user} a={a} />
           <Card title="Details">
-            <Dl rows={[
+            <Dl rows={agent ? [
+              ["Institution", a.partner],
+              ["Course", a.course_url ? <a className="text-navy" href={a.course_url} target="_blank" rel="noopener">{a.course}</a> : a.course],
+              ["Intake", a.intake],
+              ["Tuition per year", money(a.tuition_fee, a.fee_currency)],
+              ["Started", date(a.created_at)],
+            ] : [
               ["Workflow", a.workflow],
               ["Institution", a.partner],
               ["Course", a.course_url ? <a className="text-navy" href={a.course_url} target="_blank" rel="noopener">{a.course}</a> : a.course],

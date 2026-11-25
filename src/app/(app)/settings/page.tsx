@@ -14,6 +14,8 @@ export default async function Settings() {
     can(u, "settings.system") && { href: "/settings/roles", title: "Roles and permissions", body: "What each role can see and do." },
     can(u, "settings.system") && { href: "/settings/workflows", title: "Application workflows", body: "The steps an application goes through for each destination." },
     can(u, "leads.connect") && { href: "/settings/leads", title: "Ad lead sources", body: "Connect the branch's Facebook pages and Google Ads lead forms, so ad leads arrive in the CRM automatically." },
+    can(u, "subagents.manage") && { href: "/settings/sub-agents", title: "Sub-agents", body: "Outside agencies, their home branch and their logins. Each agency sees only its own students." },
+    can(u, "settings.system") && { href: "/settings/mailbox", title: "Admissions mailbox", body: "The shared mailbox the CRM sends application packs and sub-agent sign-in codes from." },
     can(u, "import.run") && { href: "/settings/import", title: "Import from Agentcis", body: "Bring students and leads across from a CSV export." },
     can(u, "audit.view") && { href: "/settings/audit", title: "Audit log", body: "Who viewed, changed, exported or deleted what, and when." },
   ].filter(Boolean) as { href: string; title: string; body: string }[];

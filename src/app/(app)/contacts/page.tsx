@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { can, requirePermission, scopeWhere } from "@/lib/auth";
+import { AgentStudents } from "../_agent/lists";
 import { q, q1 } from "@/lib/db";
 import { visibleBranches, visibleStaff, DESTINATIONS, SOURCES } from "@/lib/lookups";
 import { Card, Empty, Notice, PageHeader, Pager, TableWrap } from "@/components/ui";
@@ -13,10 +14,11 @@ type SP = { q?: string; stage?: string; branch?: string; owner?: string; dest?: 
 export default async function ContactsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requirePermission("contacts.view");
   const sp = await searchParams;
+  if (user.scope === "agent") return <AgentStudents user={user} search={sp.q?.slice(0, 100)} />;
   const page = Math.max(1, Number(sp.page) || 1);
 
   const p: unknown[] = [];
-  const where = [scopeWhere(user, "c", p, { ownerColumn: "owner_id" })];
+  const where = [scopeWhere(user, "c", p, { ownerColumn: "owner_id", agent: "contact" })];
   if (sp.q) {
     p.push(`%${sp.q.trim()}%`);
     where.push(`(c.first_name || ' ' || coalesce(c.last_name,'') ilike $${p.length} or c.email ilike $${p.length} or c.phone ilike $${p.length} or c.ref ilike $${p.length} or c.passport_no ilike $${p.length})`);

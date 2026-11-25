@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { can, requireUser, scopeWhere } from "@/lib/auth";
+import { AgentHome } from "./_agent/home";
 import { q, q1 } from "@/lib/db";
 import { Card, Empty, Notice, PageHeader, Stat, TableWrap } from "@/components/ui";
 import { DEST_LABEL, SOURCE_LABEL, STAGE_LABEL, ago, dateTime, daysUntil, date } from "@/lib/format";
@@ -8,6 +9,7 @@ export const metadata = { title: "Dashboard" };
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ denied?: string }> }) {
   const user = await requireUser();
+  if (user.scope === "agent") return <AgentHome user={user} />;
   const { denied } = await searchParams;
 
   const p: unknown[] = [];

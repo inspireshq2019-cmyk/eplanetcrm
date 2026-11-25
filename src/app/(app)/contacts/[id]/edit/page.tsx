@@ -20,7 +20,7 @@ export default async function EditContact({ params }: { params: Promise<{ id: st
   return (
     <>
       <PageHeader title={`Edit ${c.first_name} ${c.last_name ?? ""}`} back={{ href: `/contacts/${id}`, label: c.ref }} />
-      <ContactForm action={updateContact} mode="edit" values={c} branches={branches} staff={staff} canOwn={false} canSensitive={can(user, "contacts.sensitive")} defaultBranchId={user.primaryBranchId} />
+      <ContactForm action={updateContact} mode="edit" values={c} branches={branches} staff={staff} canOwn={false} canSensitive={can(user, "contacts.sensitive")} defaultBranchId={user.primaryBranchId} agent={user.scope === "agent"} />
     </>
   );
 }

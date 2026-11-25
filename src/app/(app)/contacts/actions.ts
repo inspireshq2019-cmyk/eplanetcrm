@@ -51,8 +51,10 @@ async function findDuplicates(phone: string | null, email: string | null, passpo
 export async function createContact(_: ActionResult, f: FormData): Promise<ActionResult> {
   const u = await requireUser();
   if (!can(u, "contacts.create")) return { error: "Your role can't add students." };
-  const branchId = Number(f.get("branch_id"));
-  if (!canSeeBranch(u, branchId)) return { error: "You can't add students to that branch." };
+  const agent = u.scope === "agent";
+  // Sub-agents' students always belong to their home branch, so the branch and head office see them too.
+  const branchId = agent ? u.primaryBranchId : Number(f.get("branch_id"));
+  if (!agent && !canSeeBranch(u, branchId)) return { error: "You can't add students to that branch." };
   const branch = await q1<{ country_code: string }>("select country_code from branches where id=$1", [branchId]);
   if (!branch) return { error: "Choose a branch." };
   const d = contactFields(f, branch.country_code);
@@ -61,7 +63,11 @@ export async function createContact(_: ActionResult, f: FormData): Promise<Actio
   if (!d.phone && !d.email) return { error: "Enter a phone number or an email address so the team can contact the student." };
   if (f.get("consent") !== "on") return { error: "Confirm the student agreed to Eplanet storing their details." };
 
-  if (f.get("confirm_duplicate") !== "1") {
+  if (agent) {
+    // Don't reveal other agencies' or branches' students; the branch sorts out who looks after them.
+    if ((await findDuplicates(d.phone, d.email, null)).length)
+      return { error: "A student with this phone number or email is already registered with Eplanet. Please contact your Eplanet branch before adding them." };
+  } else if (f.get("confirm_duplicate") !== "1") {
     const dup = await findDuplicates(d.phone, d.email, null);
     if (dup.length) {
       const list = dup.map((x) => `${x.name} (${x.ref}, ${x.branch})`).join("; ");
@@ -71,17 +77,21 @@ export async function createContact(_: ActionResult, f: FormData): Promise<Actio
 
   let owner = str(f, "owner_id");
   if (u.scope === "own") owner = u.id; // counsellors own what they add
+  if (agent) owner = null; // the home branch assigns a counsellor
+  else if (owner && !(await q1("select 1 from users where id::text=$1 and active and sub_agent_id is null", [owner]))) owner = null;
   const id = await tx(async (c) => {
     const r = await c.query<{ id: string }>(
       `insert into contacts(first_name,last_name,email,phone,whatsapp,dob,gender,nationality,city,address,source,source_detail,interested_destinations,
          interested_level,interested_field,intake,budget_amount,budget_currency,onshore,guardian_name,guardian_phone,tags,branch_id,owner_id,
-         consent_at,consent_source,created_by,stage)
-       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,now(),$25,$26,$27) returning id`,
+         consent_at,consent_source,created_by,stage,sub_agent_id)
+       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,now(),$25,$26,$27,$28) returning id`,
       [d.first_name, d.last_name, d.email, d.phone, d.whatsapp, d.dob, d.gender, d.nationality, d.city, d.address, d.source, d.source_detail,
        d.interested_destinations, d.interested_level, d.interested_field, d.intake, d.budget_amount, d.budget_currency, d.onshore, d.guardian_name,
-       d.guardian_phone, d.tags, branchId, owner, `Recorded by ${u.name}`, u.id, str(f, "stage") ?? "lead"]);
+       d.guardian_phone, d.tags, branchId, owner, `Recorded by ${u.name}${agent ? " (sub-agent)" : ""}`, u.id,
+       agent ? "lead" : (str(f, "stage") ?? "lead"), agent ? u.subAgentId : null]);
     const cid = r.rows[0].id;
-    await c.query("insert into activities(contact_id,kind,body,user_id) values($1,'system',$2,$3)", [cid, `Added by ${u.name}`, u.id]);
+    const via = agent ? (await c.query<{ name: string }>("select name from sub_agents where id=$1", [u.subAgentId])).rows[0]?.name : null;
+    await c.query("insert into activities(contact_id,kind,body,user_id) values($1,'system',$2,$3)", [cid, via ? `Added by ${u.name} of sub-agent ${via}` : `Added by ${u.name}`, u.id]);
     const note = str(f, "first_note");
     if (note) await c.query("insert into activities(contact_id,kind,body,user_id) values($1,'note',$2,$3)", [cid, note, u.id]);
     return cid;
@@ -95,13 +105,17 @@ export async function updateContact(_: ActionResult, f: FormData): Promise<Actio
   const id = String(f.get("id"));
   const c = await loadContactForUser(u, id);
   if (!c || !can(u, "contacts.edit")) return { error: "You can't edit this student." };
-  const branchId = Number(f.get("branch_id") ?? c.branch_id);
-  if (!canSeeBranch(u, branchId)) return { error: "You can't move students to that branch." };
+  const branchId = u.scope === "agent" ? c.branch_id : Number(f.get("branch_id") ?? c.branch_id);
+  if (u.scope !== "agent" && !canSeeBranch(u, branchId)) return { error: "You can't move students to that branch." };
   const branch = await q1<{ country_code: string }>("select country_code from branches where id=$1", [branchId]);
   const d = contactFields(f, branch!.country_code);
   const parsed = ContactSchema.safeParse({ ...d, branch_id: branchId });
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const before = await q1<Record<string, unknown>>("select * from contacts where id=$1", [id]);
+  if (u.scope === "agent" && before) {
+    // The sub-agent form doesn't show these, so keep what the branch has recorded.
+    d.source = before.source as typeof d.source; d.source_detail = before.source_detail as typeof d.source_detail; d.tags = before.tags as typeof d.tags;
+  }
   const sens = can(u, "contacts.sensitive");
   await q(
     `update contacts set first_name=$2,last_name=$3,email=$4,phone=$5,whatsapp=$6,dob=$7,gender=$8,nationality=$9,city=$10,address=$11,source=$12,
@@ -121,7 +135,7 @@ export async function setStage(_: ActionResult, f: FormData): Promise<ActionResu
   const id = String(f.get("id"));
   const stage = String(f.get("stage"));
   const c = await loadContactForUser(u, id);
-  if (!c || !can(u, "contacts.edit") || !["lead", "prospect", "client", "archived"].includes(stage)) return { error: "You can't change this student's status." };
+  if (!c || !can(u, "contacts.edit") || u.scope === "agent" || !["lead", "prospect", "client", "archived"].includes(stage)) return { error: "You can't change this student's status." };
   const reason = String(f.get("lost_reason") ?? "").trim().slice(0, 300) || null;
   if (stage === "archived" && !reason) return { error: "Add a short reason for archiving, e.g. chose another agent or not ready this year." };
   await q("update contacts set stage=$2, lost_reason=case when $2='archived' then $3 else lost_reason end, updated_at=now() where id=$1", [id, stage, reason]);
@@ -136,9 +150,9 @@ export async function assignOwner(f: FormData) {
   const id = String(f.get("id"));
   const c = await loadContactForUser(u, id);
   if (!c || !can(u, "contacts.edit")) return;
-  if (u.scope === "own") return; // counsellors can't hand students to someone else
+  if (u.scope === "own" || u.scope === "agent") return; // counsellors and sub-agents can't hand students to someone else
   const owner = String(f.get("owner_id") ?? "") || null;
-  const staff = owner && z.uuid().safeParse(owner).success ? await q1<{ name: string; primary_branch_id: number }>("select name, primary_branch_id from users where id=$1 and active", [owner]) : null;
+  const staff = owner && z.uuid().safeParse(owner).success ? await q1<{ name: string; primary_branch_id: number }>("select name, primary_branch_id from users where id=$1 and active and sub_agent_id is null", [owner]) : null;
   if (owner && !staff) return;
   const name = staff?.name ?? null;
   await q("update contacts set owner_id=$2, updated_at=now() where id=$1", [id, owner]);

@@ -52,7 +52,7 @@ export default async function NewApplication({ searchParams }: { searchParams: P
       <ActionForm action={createApplication} className="card grid gap-5 p-5">
         <input type="hidden" name="contact_id" value={c.id} />
         <ApplicationPicker workflows={workflows} partners={partners} courses={courses} defaultDest={c.dests[0]} />
-        <div className="grid gap-4 sm:grid-cols-2">
+        {user.scope !== "agent" && <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Applied through" htmlFor="channel">
             <select className="select" id="channel" name="channel" defaultValue="direct">
               <option value="direct">Direct to the institution</option><option value="applyboard">ApplyBoard</option><option value="crizac">Crizac</option>
@@ -62,7 +62,8 @@ export default async function NewApplication({ searchParams }: { searchParams: P
           <Field label="Responsible counsellor" htmlFor="owner_id">
             <select className="select" id="owner_id" name="owner_id" defaultValue={c.owner_id ?? user.id}>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
           </Field>
-        </div>
+        </div>}
+        {user.scope === "agent" && <p className="text-sm text-slate">After you start it, add the documents and press <b>Send to admissions</b> on the application page.</p>}
         <div><Submit>Start application</Submit></div>
       </ActionForm>
     </>

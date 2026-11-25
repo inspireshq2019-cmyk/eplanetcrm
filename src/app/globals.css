@@ -62,4 +62,5 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
 .badge-red { background: var(--color-red-tint); color: var(--color-red-dark); }
 .badge-ok { background: var(--color-ok-tint); color: var(--color-ok); }
 .badge-warn { background: var(--color-warn-tint); color: var(--color-warn); }
+.badge-navy { background: var(--color-sky); color: var(--color-navy); }
 .badge-grey { background: #eef0f4; color: var(--color-slate); }

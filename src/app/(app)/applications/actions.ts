@@ -29,14 +29,19 @@ export async function createApplication(_: ActionResult, f: FormData): Promise<A
     return { error: "That institution isn't in the chosen country. Check the country or the institution." };
 
   const onshore = f.get("onshore_transfer") === "on";
+  // The responsible counsellor must be active Eplanet staff; sub-agents leave it to their branch.
+  let owner: string | null = u.scope === "agent" ? (c.owner_id ?? null) : (str(f, "owner_id") ?? c.owner_id ?? u.id);
+  if (owner && owner !== u.id && !(await q1("select 1 from users where id::text=$1 and active and sub_agent_id is null", [owner]))) owner = c.owner_id ?? null;
+  const rawChannel = str(f, "channel") ?? "direct";
+  const channel = u.scope !== "agent" && ["direct", "applyboard", "crizac", "infinite", "studylink", "other"].includes(rawChannel) ? rawChannel : "direct";
   const id = await tx(async (db) => {
     const first = (await db.query<{ id: number }>("select id from workflow_stages where workflow_id=$1 order by position limit 1", [workflowId])).rows[0];
     const r = await db.query<{ id: string; ref: string }>(
       `insert into applications(contact_id,branch_id,owner_id,workflow_id,stage_id,destination,partner_id,course_id,course_title,intake,channel,
           tuition_fee,fee_currency,onshore_transfer,created_by)
        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id, ref`,
-      [contactId, c.branch_id, str(f, "owner_id") ?? c.owner_id ?? u.id, workflowId, first.id, wf.destination, partnerId, courseId, courseTitle,
-       str(f, "intake"), str(f, "channel") ?? "direct", str(f, "tuition_fee") ? Number(str(f, "tuition_fee")) : null, str(f, "fee_currency"), onshore, u.id]);
+      [contactId, c.branch_id, owner, workflowId, first.id, wf.destination, partnerId, courseId, courseTitle,
+       str(f, "intake"), channel, str(f, "tuition_fee") ? Number(str(f, "tuition_fee")) : null, str(f, "fee_currency"), onshore, u.id]);
     const app = r.rows[0];
     await db.query("insert into stage_history(application_id,to_stage_id,changed_by,note) values($1,$2,$3,'Application started')", [app.id, first.id, u.id]);
     await db.query("insert into application_checklist(application_id,item_id) select $1, id from checklist_items where workflow_id=$2", [app.id, workflowId]);
@@ -57,7 +62,7 @@ export async function moveStage(_: ActionResult, f: FormData): Promise<ActionRes
   const u = await requireUser();
   const id = String(f.get("id"));
   const a = await loadApplicationForUser(u, id);
-  if (!a || !can(u, "applications.edit")) return { error: "You can't update this application." };
+  if (!a || !can(u, "applications.edit") || u.scope === "agent") return { error: "You can't update this application." };
   const stageId = Number(f.get("stage_id"));
   const stage = await q1<{ id: number; name: string; outcome: string | null; workflow_id: number }>("select id, name, outcome, workflow_id from workflow_stages where id=$1", [stageId]);
   if (!stage || stage.workflow_id !== a.workflow_id) return { error: "Choose a step from this application's workflow." };
@@ -83,12 +88,16 @@ export async function updateApplication(_: ActionResult, f: FormData): Promise<A
   const u = await requireUser();
   const id = String(f.get("id"));
   const a = await loadApplicationForUser(u, id);
-  if (!a || !can(u, "applications.edit")) return { error: "You can't update this application." };
-  const owner = str(f, "owner_id");
+  if (!a || !can(u, "applications.edit") || u.scope === "agent") return { error: "You can't update this application." };
+  let owner = str(f, "owner_id");
+  if (owner && !(await q1("select 1 from users where id::text=$1 and active and sub_agent_id is null", [owner]))) return { error: "Choose an active staff member as the counsellor." };
+  const rawChannel = str(f, "channel") ?? "direct";
+  if (!["direct", "applyboard", "crizac", "infinite", "studylink", "other"].includes(rawChannel)) return { error: "Choose how it was applied." };
+  owner = owner ?? null;
   await q(
     `update applications set intake=$2, channel=$3, student_id_at_provider=$4, tuition_fee=$5, fee_currency=$6, onshore_transfer=$7,
        accepted_date=$8, owner_id=$9, updated_at=now() where id=$1`,
-    [id, str(f, "intake"), str(f, "channel") ?? "direct", str(f, "student_id_at_provider"), str(f, "tuition_fee") ? Number(str(f, "tuition_fee")) : null,
+    [id, str(f, "intake"), rawChannel, str(f, "student_id_at_provider"), str(f, "tuition_fee") ? Number(str(f, "tuition_fee")) : null,
      str(f, "fee_currency"), f.get("onshore_transfer") === "on", str(f, "accepted_date"), owner]);
   await audit(u, "update", "application", id);
   revalidatePath(`/applications/${id}`);
@@ -102,6 +111,7 @@ export async function setChecklist(f: FormData) {
   if (!a || !can(u, "documents.manage")) return;
   const status = String(f.get("status"));
   if (!["pending", "received", "verified", "not_needed"].includes(status)) return;
+  if (u.scope === "agent" && !["pending", "received"].includes(status)) return; // only Eplanet staff verify documents
   await q("update application_checklist set status=$3, updated_by=$4, updated_at=now() where application_id=$1 and item_id=$2", [id, Number(f.get("item_id")), status, u.id]);
   revalidatePath(`/applications/${id}`);
 }

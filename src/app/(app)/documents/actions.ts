@@ -1,10 +1,12 @@
 "use server";
 
+import { z } from "zod";
+
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { can, requireUser } from "@/lib/auth";
 import { loadContactForUser } from "@/lib/access";
-import { q } from "@/lib/db";
+import { q, q1 } from "@/lib/db";
 import { putFile } from "@/lib/storage";
 import type { ActionResult } from "@/components/action-form";
 
@@ -38,10 +40,15 @@ export async function uploadDocument(_: ActionResult, f: FormData): Promise<Acti
 
   const applicationId = String(f.get("application_id") ?? "") || null;
   const visaId = String(f.get("visa_case_id") ?? "") || null;
+  // The application or visa case must belong to this same student.
+  if (applicationId && !(z.uuid().safeParse(applicationId).success && (await q1("select 1 from applications where id=$1 and contact_id=$2", [applicationId, contactId]))))
+    return { error: "That application doesn't belong to this student." };
+  if (visaId && (u.scope === "agent" || !(z.uuid().safeParse(visaId).success && (await q1("select 1 from visa_cases where id=$1 and contact_id=$2", [visaId, contactId])))))
+    return { error: "That visa case doesn't belong to this student." };
   const key = `${c.branch_id}/${contactId}/${randomUUID()}.${ALLOWED[mime]}`;
   await putFile(key, buf, mime);
   const name = file.name.replace(/[^\w.\- ()]+/g, "_").slice(0, 150);
-  const docType = String(f.get("doc_type") ?? "other");
+  const docType = String(f.get("doc_type") ?? "other").replace(/[^a-z_]/g, "").slice(0, 40) || "other";
   const r = await q<{ id: string }>(
     `insert into documents(contact_id,application_id,visa_case_id,doc_type,filename,storage_key,size_bytes,mime,expiry,uploaded_by)
      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,
@@ -65,7 +72,7 @@ export async function verifyDocument(f: FormData) {
   const u = await requireUser();
   const id = String(f.get("id"));
   const d = (await q<{ contact_id: string; application_id: string | null }>("select contact_id, application_id from documents where id=$1", [id]))[0];
-  if (!d || !can(u, "documents.manage") || !(await loadContactForUser(u, d.contact_id))) return;
+  if (!d || !can(u, "documents.manage") || u.scope === "agent" || !(await loadContactForUser(u, d.contact_id))) return; // only Eplanet staff mark documents checked
   await q("update documents set verified_by=$2, verified_at=now() where id=$1", [id, u.id]);
   await q("update application_checklist set status='verified', updated_by=$2, updated_at=now() where document_id=$1", [id, u.id]);
   revalidatePath(`/contacts/${d.contact_id}`);

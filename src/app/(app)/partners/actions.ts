@@ -8,7 +8,7 @@ import type { ActionResult } from "@/components/action-form";
 
 const str = (f: FormData, k: string, max = 300) => { const v = String(f.get(k) ?? "").trim().slice(0, max); return v === "" ? null : v; };
 const num = (f: FormData, k: string) => { const v = str(f, k); if (v === null) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
-const KINDS = ["university", "college", "school", "english", "insurer", "aggregator", "other"];
+const KINDS = ["university", "college", "school", "english", "insurer", "aggregator", "portal", "other"];
 const LEVELS = ["FOUNDATION", "DIPLOMA", "BACHELOR", "MASTER", "DOCTORATE", "ENGLISH", "OTHER"];
 const url = (v: string | null) => (v && !/^https?:\/\//i.test(v) ? `https://${v}` : v);
 
@@ -94,4 +94,42 @@ export async function setCourseActive(f: FormData) {
   if (!u) return;
   const r = await q1<{ partner_id: number }>("update courses set active=$2 where id=$1 returning partner_id", [Number(f.get("id")), f.get("active") === "1"]);
   if (r) revalidatePath(`/partners/${r.partner_id}`);
+}
+
+/** How Eplanet sends applications to this institution: directly, or through a master agent or portal. */
+export async function addRoute(_: ActionResult, f: FormData): Promise<ActionResult> {
+  const u = await editor();
+  if (!u) return { error: "Your role can't change partners." };
+  const partnerId = num(f, "partner_id");
+  const p = partnerId ? await q1<{ kind: string }>("select kind from partners where id=$1", [partnerId]) : null;
+  if (!p || ["aggregator", "portal", "insurer"].includes(p.kind)) return { error: "Routes are set on institutions." };
+  const kind = str(f, "route_kind") ?? "";
+  if (!["direct", "master_agent", "portal"].includes(kind)) return { error: "Choose the route." };
+  const via = num(f, "via_partner_id");
+  if (kind === "direct" && via) return { error: "A direct route doesn't go through a master agent or portal." };
+  if (kind !== "direct") {
+    const want = kind === "portal" ? ["portal", "aggregator"] : ["aggregator", "portal"];
+    const v = via ? await q1<{ kind: string }>("select kind from partners where id=$1 and active", [via]) : null;
+    if (!v || !want.includes(v.kind)) return { error: "Choose the master agent or portal from the list." };
+  }
+  const method = str(f, "method") === "email" ? "email" : "portal";
+  const email = str(f, "email", 150);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Check the email address." };
+  if (method === "email" && !email) return { error: "Add the email address applications go to." };
+  const preferred = f.get("preferred") === "on";
+  if (preferred) await q("update partner_routes set preferred=false where partner_id=$1", [partnerId]);
+  const r = await q1<{ id: number }>(
+    "insert into partner_routes(partner_id,route_kind,via_partner_id,method,portal_url,email,notes,preferred) values($1,$2,$3,$4,$5,$6,$7,$8) returning id",
+    [partnerId, kind, kind === "direct" ? null : via, method, url(str(f, "portal_url")), email, str(f, "notes", 500), preferred]);
+  await audit(u, "create", "partner_route", String(r!.id), undefined, { partner_id: partnerId, kind, via });
+  revalidatePath(`/partners/${partnerId}`);
+  return { ok: "Route added." };
+}
+
+export async function removeRoute(f: FormData) {
+  const u = await editor();
+  if (!u) return;
+  const id = Number(f.get("id"));
+  const r = await q1<{ partner_id: number }>("update partner_routes set active=false, preferred=false where id=$1 returning partner_id", [id]);
+  if (r) { await audit(u, "delete", "partner_route", String(id)); revalidatePath(`/partners/${r.partner_id}`); }
 }

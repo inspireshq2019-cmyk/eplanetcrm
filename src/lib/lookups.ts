@@ -13,10 +13,12 @@ export async function visibleBranches(u: CurrentUser): Promise<BranchOpt[]> {
 
 /** Active staff working in the branches the user may see. */
 export async function visibleStaff(u: CurrentUser): Promise<UserOpt[]> {
-  if (u.scope === "all") return q<UserOpt>("select id,name,role_key,primary_branch_id,marn from users where active order by name");
+  if (u.scope === "agent") return []; // sub-agents don't pick or see Eplanet staff
+  // Sub-agent logins are not staff: never offered as counsellors, assignees or owners.
+  if (u.scope === "all") return q<UserOpt>("select id,name,role_key,primary_branch_id,marn from users where active and sub_agent_id is null order by name");
   return q<UserOpt>(
     `select distinct u.id,u.name,u.role_key,u.primary_branch_id,u.marn from users u left join user_branches ub on ub.user_id=u.id
-      where u.active and (u.primary_branch_id = any($1::int[]) or ub.branch_id = any($1::int[])) order by u.name`, [u.branchIds]);
+      where u.active and u.sub_agent_id is null and (u.primary_branch_id = any($1::int[]) or ub.branch_id = any($1::int[])) order by u.name`, [u.branchIds]);
 }
 
 export async function branchById(id: number) {
@@ -33,4 +35,4 @@ export const FIELDS = [
 export const SOURCES = [["walk_in", "Walk-in"], ["website", "Website form"], ["facebook", "Facebook / Instagram"], ["google_ads", "Google Ads"], ["whatsapp", "WhatsApp"], ["phone", "Phone call"], ["event", "Education fair / event"], ["referral", "Referral"], ["sub_agent", "Sub-agent"], ["other", "Other"]] as const;
 export const TESTS = [["IELTS_ACADEMIC", "IELTS Academic"], ["IELTS_UKVI", "IELTS for UKVI"], ["IELTS_GENERAL", "IELTS General"], ["PTE", "PTE Academic"], ["TOEFL_IBT", "TOEFL iBT"], ["DUOLINGO", "Duolingo"]] as const;
 export const EDU_LEVELS = [["SSC", "SSC / O-levels"], ["HSC", "HSC / A-levels"], ["DIPLOMA", "Diploma"], ["BACHELOR", "Bachelor's"], ["MASTER", "Master's"], ["OTHER", "Other"]] as const;
-export const PARTNER_KINDS: [string, string][] = [["university", "University"], ["college", "College / TAFE"], ["school", "School"], ["english", "English school"], ["insurer", "Health insurer"], ["aggregator", "Aggregator"], ["other", "Other"]];
+export const PARTNER_KINDS: [string, string][] = [["university", "University"], ["college", "College / TAFE"], ["school", "School"], ["english", "English school"], ["insurer", "Health insurer"], ["aggregator", "Master agent / aggregator"], ["portal", "Admission portal"], ["other", "Other"]];

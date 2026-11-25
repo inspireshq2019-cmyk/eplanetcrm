@@ -9,7 +9,10 @@ export function proxy(request: NextRequest) {
     if (request.nextUrl.pathname !== "/") url.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
     return NextResponse.redirect(url);
   }
-  return NextResponse.next();
+  // Pass the page address on, so the app layout can keep sub-agents to their own pages.
+  const headers = new Headers(request.headers);
+  headers.set("x-eplanet-path", request.nextUrl.pathname);
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {

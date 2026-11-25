@@ -51,7 +51,7 @@ export async function buildReport(u: CurrentUser, key: string, r: Range): Promis
                 (select count(*) from applications a join stage_history h on h.application_id=a.id join workflow_stages s on s.id=h.to_stage_id and s.outcome='won'
                   where a.owner_id is not distinct from u.id and ${off(ww, pc.length + pa.length)} and h.changed_at >= $${pAll.length - 1}::date and h.changed_at < $${pAll.length}::date + 1) won,
                 0 visas
-           from (select id, name from users where active union all select null, null) u order by leads desc, apps desc`, pAll);
+           from (select id, name from users where active and sub_agent_id is null union all select null, null) u order by leads desc, apps desc`, pAll);
       return { key, title: "Counsellor performance", note: "Leads and applications added in the period by owner, and applications that reached a won step in the period.",
         columns: [{ key: "name", label: "Counsellor" }, { key: "leads", label: "New leads", num: true }, { key: "apps", label: "New applications", num: true }, { key: "won", label: "Won", num: true }],
         rows: rows.filter((x) => x.leads || x.apps || x.won) };

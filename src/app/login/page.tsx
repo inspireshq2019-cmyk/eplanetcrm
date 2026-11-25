@@ -51,6 +51,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             Sign in with Google
           </a>
 
+          <p className="mt-4 text-center text-sm text-slate">Partner agency? <a className="font-semibold text-navy" href="/login/agent">Sign in with an email code</a></p>
           {demoMisconfigured() && (
             <p className="mt-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">Test sign-in is switched on but has no test code. Add a DEMO_PASSCODE of at least 12 characters in the hosting settings.</p>
           )}

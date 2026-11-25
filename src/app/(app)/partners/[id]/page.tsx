@@ -6,7 +6,8 @@ import { LEVELS } from "@/lib/lookups";
 import { ActionForm, ConfirmButton, Submit } from "@/components/action-form";
 import { Card, Dl, Empty, Field, PageHeader, Stat, TableWrap } from "@/components/ui";
 import { date, LEVEL_LABEL, money } from "@/lib/format";
-import { addAgreement, endAgreement, saveCourse, setCourseActive } from "../actions";
+import { addAgreement, addRoute, endAgreement, removeRoute, saveCourse, setCourseActive } from "../actions";
+import { METHOD_LABEL, ROUTE_LABEL } from "@/lib/admissions";
 import { PartnerForm, type PartnerRow } from "../partner-form";
 
 export const metadata = { title: "Institution" };
@@ -19,6 +20,10 @@ export default async function PartnerPage({ params, searchParams }: { params: Pr
   if (!pa) notFound();
   const edit = can(user, "partners.edit");
   const p: unknown[] = [pa.id];
+  const routes = await q<{ id: number; route_kind: string; via: string | null; method: string; portal_url: string | null; email: string | null; notes: string | null; preferred: boolean }>(
+    `select r.id, r.route_kind, v.name via, r.method, r.portal_url, r.email, r.notes, r.preferred from partner_routes r left join partners v on v.id=r.via_partner_id
+      where r.partner_id=$1 and r.active order by r.preferred desc, r.id`, [pa.id]);
+  const brokers = await q<{ id: number; name: string; kind: string }>("select id, name, kind from partners where active and kind in ('aggregator','portal') and id<>$1 order by name", [pa.id]);
   const [agreements, courses, stats, countries, aggregators] = await Promise.all([
     q<{ id: number; commission_pct: number | null; bonus: string | null; claim_basis: string | null; currency: string | null; valid_from: string | null; valid_to: string | null; notes: string | null; via: string | null; current: boolean }>(
       `select g.*, v.name via, (g.valid_to is null or g.valid_to >= current_date) and (g.valid_from is null or g.valid_from <= current_date) current
@@ -101,6 +106,40 @@ export default async function PartnerPage({ params, searchParams }: { params: Pr
         </div>
 
         <aside className="grid min-w-0 content-start gap-6">
+          {!["aggregator", "portal", "insurer"].includes(pa.kind) && (
+          <Card title="How we submit applications">
+            {routes.length ? (
+              <ul className="mb-4 divide-y divide-line text-sm">{routes.map((r) => (
+                <li key={r.id} className="py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-semibold">{ROUTE_LABEL[r.route_kind]}{r.via ? `: ${r.via}` : ""}</span>
+                    {r.preferred && <span className="badge badge-ok">Usual</span>}
+                  </div>
+                  <p className="text-xs text-slate">{METHOD_LABEL[r.method]}{r.email ? ` · ${r.email}` : ""}</p>
+                  {r.portal_url && <a className="text-xs text-navy break-all" href={r.portal_url} target="_blank" rel="noopener">{r.portal_url}</a>}
+                  {r.notes && <p className="text-xs whitespace-pre-line">{r.notes}</p>}
+                  {edit && <form action={removeRoute} className="mt-2"><input type="hidden" name="id" value={r.id} /><ConfirmButton>Remove</ConfirmButton></form>}
+                </li>))}</ul>
+            ) : <p className="mb-4 text-sm text-slate">No routes yet. The admission team picks from these when recording a submission.</p>}
+            {edit && (
+              <ActionForm action={addRoute} resetOnSuccess className="grid gap-3">
+                <input type="hidden" name="partner_id" value={pa.id} />
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Route" htmlFor="r_kind"><select className="select" id="r_kind" name="route_kind" defaultValue="direct">{Object.entries(ROUTE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+                  <Field label="How" htmlFor="r_method"><select className="select" id="r_method" name="method" defaultValue="portal">{Object.entries(METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+                </div>
+                <Field label="Master agent or portal" htmlFor="r_via" hint="Add master agents and portals as partners of that kind first.">
+                  <select className="select" id="r_via" name="via_partner_id" defaultValue=""><option value="">— (direct)</option>{brokers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
+                </Field>
+                <Field label="Portal link" htmlFor="r_url"><input className="input" id="r_url" name="portal_url" maxLength={300} placeholder="https://" /></Field>
+                <Field label="Applications email" htmlFor="r_email"><input className="input" id="r_email" type="email" name="email" maxLength={150} /></Field>
+                <Field label="Notes" htmlFor="r_notes"><input className="input" id="r_notes" name="notes" maxLength={500} placeholder="e.g. Use the Crizac portal for postgraduate courses" /></Field>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="preferred" /> Usual route for this institution</label>
+                <Submit className="btn">Add route</Submit>
+              </ActionForm>
+            )}
+          </Card>
+          )}
           <Card title="Commission agreements">
             {agreements.length ? (
               <ul className="mb-4 divide-y divide-line text-sm">{agreements.map((g) => (

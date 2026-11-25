@@ -10,9 +10,10 @@ export type ContactValues = Partial<{
   tags: string[]; branch_id: number; owner_id: string | null; passport_no: string | null; passport_expiry: string | null;
 }>;
 
-export function ContactForm({ action, values = {}, branches, staff, mode, canOwn, canSensitive, defaultBranchId }: {
+export function ContactForm({ action, values = {}, branches, staff, mode, canOwn, canSensitive, defaultBranchId, agent = false }: {
   action: (p: ActionResult, f: FormData) => Promise<ActionResult>; values?: ContactValues; branches: BranchOpt[]; staff: UserOpt[];
   mode: "new" | "edit"; canOwn: boolean; canSensitive: boolean; defaultBranchId: number;
+  agent?: boolean; // sub-agent login: no branch, counsellor or status choices; source is always the sub-agent
 }) {
   const v = values;
   const branchId = v.branch_id ?? defaultBranchId;
@@ -84,6 +85,22 @@ export function ContactForm({ action, values = {}, branches, staff, mode, canOwn
         </div>
       </fieldset>
 
+      {agent ? (
+      <fieldset className="card p-5">
+        <legend className="px-1 font-display text-[15px] font-semibold text-navy">Parent or guardian</legend>
+        <input type="hidden" name="source" value="sub_agent" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Parent / guardian name" htmlFor="guardian_name"><input className="input" id="guardian_name" name="guardian_name" defaultValue={v.guardian_name ?? ""} /></Field>
+          <Field label="Parent / guardian phone" htmlFor="guardian_phone"><input className="input tnum" id="guardian_phone" name="guardian_phone" defaultValue={v.guardian_phone ?? ""} inputMode="tel" /></Field>
+        </div>
+        {mode === "new" && (
+          <div className="mt-4 grid gap-3">
+            <Field label="Notes for Eplanet" htmlFor="first_note"><textarea className="textarea" id="first_note" name="first_note" placeholder="Anything the admission team should know about this student" /></Field>
+            <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="consent" className="mt-1" required /> The student agreed to us sharing their details with Eplanet International to apply to study abroad.</label>
+          </div>
+        )}
+      </fieldset>
+      ) : (
       <fieldset className="card p-5">
         <legend className="px-1 font-display text-[15px] font-semibold text-navy">Where they came from and who looks after them</legend>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -116,6 +133,7 @@ export function ContactForm({ action, values = {}, branches, staff, mode, canOwn
           </div>
         )}
       </fieldset>
+      )}
 
       <div className="flex gap-3"><Submit>{mode === "new" ? "Add student" : "Save changes"}</Submit></div>
     </ActionForm>

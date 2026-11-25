@@ -11,6 +11,7 @@ export default async function Staff({ searchParams }: { searchParams: Promise<{ 
   const sp = await searchParams;
   const p: unknown[] = [];
   const where = [scopeWhere(user, "u", p).replace("u.branch_id", "u.primary_branch_id")];
+  where.push("u.sub_agent_id is null"); // sub-agent logins are managed under Settings › Sub-agents
   if (!sp.inactive) where.push("u.active");
   if (sp.pending) where.push("u.email like '%.invalid'");
   if (sp.q) { p.push(`%${sp.q}%`); where.push(`(u.name ilike $${p.length} or u.email ilike $${p.length})`); }
