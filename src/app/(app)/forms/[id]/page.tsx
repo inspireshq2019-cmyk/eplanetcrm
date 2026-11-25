@@ -20,7 +20,21 @@ export default async function FormDetail({ params }: { params: Promise<{ id: str
             f.thank_you, f.active, to_char(f.closes_on,'YYYY-MM-DD') closes_on, b.name branch, b.timezone, o.name owner
        from lead_forms f join branches b on b.id=f.branch_id left join users o on o.id=f.owner_id where f.id=$1`, [Number(id)]);
   if (!form || !canSeeBranch(u, form.branch_id)) notFound();
-  const url = `${await publicBase()}/f/${form.slug}`;
+  const base = await publicBase();
+  const url = `${base}/f/${form.slug}`;
+  // Pasted into a WordPress "Custom HTML" block. Grows to the form's height, and counts each enquiry as a Meta Pixel "Lead" if the pixel is on the page.
+  const snippet = [
+    `<div id="eplanet-form-${form.slug}"></div>`,
+    `<script>(function(){`,
+    `var box=document.getElementById("eplanet-form-${form.slug}"),f=document.createElement("iframe");`,
+    `f.src="${url}?embed=1&page="+encodeURIComponent(location.href);`,
+    `f.title="${form.title.replace(/["<>\\]/g, "")}";f.style.cssText="width:100%;border:0;min-height:640px";f.loading="lazy";box.appendChild(f);`,
+    `window.addEventListener("message",function(e){`,
+    `if(e.origin!=="${base}"||!e.data||e.data.eplanetForm!=="${form.slug}")return;`,
+    `if(e.data.height)f.style.height=e.data.height+"px";`,
+    `if(e.data.submitted&&window.fbq)window.fbq("track","Lead");`,
+    `});})();</script>`,
+  ].join("\n");
   const [svg, subs] = await Promise.all([
     qrSvg(url),
     q<{ id: string; created_at: string; status: string; contact_id: string | null; name: string | null; phone: string | null; counsellor: string | null }>(
@@ -73,6 +87,13 @@ export default async function FormDetail({ params }: { params: Promise<{ id: str
                 </tr>))}</tbody>
             </table></TableWrap>
           ) : <Empty title="No registrations yet">Use Preview the form to try it without saving anything. Registrations appear here as they arrive.</Empty>}
+        </Card>
+        <Card title="Put this form on your website" className="lg:col-span-2">
+          <p className="mb-3 text-sm text-slate">Enquiries sent from the website come into the CRM as new leads with the source &ldquo;Website form&rdquo; and the page they were sent from. In WordPress, add a <b>Custom HTML</b> block (or Elementor&apos;s <b>HTML</b> widget) to the page and paste this code. If the Meta Pixel is on the site, each enquiry is also counted as a &ldquo;Lead&rdquo;.</p>
+          <label htmlFor="embed-code" className="text-xs font-semibold text-slate">Code for the website</label>
+          <textarea id="embed-code" rows={11} className="textarea mt-1 font-mono text-xs" readOnly value={snippet} />
+          <div className="mt-3 flex flex-wrap gap-2"><CopyField id="embed-copy" label="Or link to it from a button or menu" value={url} /></div>
+          <p className="mt-2 text-xs text-slate">Works on eplanetintl.com and eplanetintl.online (and their sub-domains). Other websites can only link to the form.</p>
         </Card>
       </div>
     </>

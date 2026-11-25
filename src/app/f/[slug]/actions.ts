@@ -18,7 +18,9 @@ export async function register(_: RegisterResult, f: FormData): Promise<Register
   if (!form) return { error: "This form no longer exists." };
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: form.timezone }).format(new Date());
   if (!isOpen(form, today)) return { error: "Registration for this event has closed. Please speak to the Eplanet team." };
-  const thanks = form.thank_you || "Thank you for registering. An Eplanet counsellor will contact you soon.";
+  // Sent from the form shown inside a page of the Eplanet website, rather than from a QR code at an event.
+  const web = f.get("embed") === "1";
+  const thanks = form.thank_you || (web ? "Thank you for your enquiry. An Eplanet counsellor will contact you soon." : "Thank you for registering. An Eplanet counsellor will contact you soon.");
   if (String(f.get("website") ?? "")) return { ok: thanks }; // hidden field only bots fill in
   if (f.get("preview") === "1") return { ok: `Preview only: nothing was saved. Students will see: “${thanks}”` };
 
@@ -71,20 +73,23 @@ export async function register(_: RegisterResult, f: FormData): Promise<Register
     if ((recent?.n ?? 0) >= 300) return { error: "Too many registrations from this network just now. Please try again in a few minutes." };
   }
 
-  const about = `event form “${form.title}”${form.event_date ? ` (${date(form.event_date)})` : ""}`;
+  const pageRaw = String(f.get("page") ?? "").slice(0, 300);
+  const page = web && /^https?:\/\/[^\s]+$/.test(pageRaw) ? pageRaw : "";
+  const about = web ? `website form “${form.title}”` : `event form “${form.title}”${form.event_date ? ` (${date(form.event_date)})` : ""}`;
   const answers: [string, string][] = [
     ...(eduLabel ? [["Last completed education", eduLabel] as [string, string]] : []),
     ...(english ? [["English test", english] as [string, string]] : []),
     ...(intakeOk ? [["Wants to start", intakeOk] as [string, string]] : []),
     ...extra,
     ...(message ? [["Question for Eplanet", message] as [string, string]] : []),
+    ...(page ? [["Sent from website page", page] as [string, string]] : []),
   ];
   await tx(async (db) => {
     const r = await addLead(db, form.branch_id,
       { channel: "form", full: name, email, phone: phoneRaw, city, answers, destinations: dest, level: levelOk || null, intake: intakeOk || null },
-      { source: "event", about, tags: ["event", `form-${form.slug}`], ownerId: form.owner_id,
-        consent: `Registered on the ${about} and agreed: ${consentText(form.branch)}`,
-        task: form.follow_up ? { title: (n, existing) => `${existing ? "Follow up" : "Call"} ${n}: registered for ${form.title}`, due: "1 day", priority: "normal" } : null });
+      { source: web ? "website" : "event", about, tags: [web ? "website" : "event", `form-${form.slug}`], ownerId: form.owner_id,
+        consent: `${web ? "Sent an enquiry through the" : "Registered on the"} ${about} and agreed: ${consentText(form.branch)}`,
+        task: form.follow_up ? { title: (n, existing) => `${existing ? "Follow up" : "Call"} ${n}: ${web ? "website enquiry" : `registered for ${form.title}`}`, due: "1 day", priority: "normal" } : null });
     await db.query("insert into form_submissions(form_id,contact_id,status,ip_hash) values($1,$2,$3,$4)", [form.id, r.contactId, r.status, ipHash]);
   });
   return { ok: thanks };

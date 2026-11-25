@@ -14,7 +14,7 @@ export function FormBuilder({ form, branches, staff, defaultBranch }: {
       {form && <input type="hidden" name="id" value={form.id} />}
       <section className="card grid gap-4 p-5 sm:grid-cols-2">
         <h2 className="font-display text-lg font-semibold text-navy sm:col-span-2">The event</h2>
-        <Field label="Title *" htmlFor="title" className="sm:col-span-2" hint="Students see this at the top of the form.">
+        <Field label="Title *" htmlFor="title" className="sm:col-span-2" hint="Students see this at the top of the form. For the website, e.g. &ldquo;Free study abroad consultation&rdquo;.">
           <input className="input" id="title" name="title" required maxLength={150} defaultValue={form?.title} placeholder="e.g. Australia & UK Education Fair, Dhaka" />
         </Field>
         <Field label="Short introduction" htmlFor="intro" className="sm:col-span-2">

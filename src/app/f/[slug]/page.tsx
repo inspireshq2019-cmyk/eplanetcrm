@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { q1 } from "@/lib/db";
 import { date } from "@/lib/format";
 import { consentText, DESTINATIONS, EDU_LEVELS, fieldModes, INTAKE_CHOICES, isOpen, LEVELS, STANDARD_FIELDS, type FormRow } from "@/lib/forms";
-import { RegisterForm } from "./register-form";
+import { EmbedSize, RegisterForm } from "./register-form";
 
 type PublicForm = FormRow & { branch: string; timezone: string; phone: string | null; country_code: string };
 
@@ -33,9 +33,13 @@ function Row({ k, label, required, error, children, hint }: { k: string; label: 
   );
 }
 
-export default async function PublicForm({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ preview?: string }> }) {
+export default async function PublicForm({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ preview?: string; embed?: string; page?: string }> }) {
   const { slug } = await params;
-  const preview = (await searchParams).preview === "1";
+  const sp = await searchParams;
+  const preview = sp.preview === "1";
+  // Shown inside a page of the Eplanet website: no logo or background, and the height is passed to the page.
+  const embed = sp.embed === "1";
+  const page = embed && /^https?:\/\//.test(sp.page ?? "") ? (sp.page ?? "").slice(0, 300) : "";
   const f = await load(slug);
   const today = f ? new Intl.DateTimeFormat("en-CA", { timeZone: f.timezone }).format(new Date()) : "";
   const modes = f ? fieldModes(f.fields) : null;
@@ -44,10 +48,11 @@ export default async function PublicForm({ params, searchParams }: { params: Pro
   const on = (k: keyof NonNullable<typeof modes>) => modes?.[k] !== "off";
 
   return (
-    <main className="min-h-dvh bg-mist px-4 py-6 sm:py-10">
-      <div className="mx-auto grid max-w-lg gap-5">
+    <main className={embed ? "bg-transparent p-1" : "min-h-dvh bg-mist px-4 py-6 sm:py-10"}>
+      {embed && <><style>{"html,body{background:transparent!important}"}</style><EmbedSize slug={slug} /></>}
+      <div className={embed ? "mx-auto grid max-w-2xl gap-4" : "mx-auto grid max-w-lg gap-5"}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/eplanet-logo.png" alt="Eplanet International" className="mx-auto h-11 w-auto" />
+        {!embed && <img src="/brand/eplanet-logo.png" alt="Eplanet International" className="mx-auto h-11 w-auto" />}
         {!f ? (
           <section className="card p-6 text-center"><p className="font-display text-xl font-bold text-navy">Form not found</p><p className="mt-1 text-slate">Please check the link or ask the Eplanet team for the right QR code.</p></section>
         ) : (
@@ -63,9 +68,10 @@ export default async function PublicForm({ params, searchParams }: { params: Pro
                 <div className="py-6 text-center"><p className="font-display text-xl font-bold text-navy">Registration has closed</p>
                   <p className="mt-1 text-slate">Please speak to the Eplanet team{f.phone ? ` or call ${f.phone}` : ""}.</p></div>
               ) : (
-                <RegisterForm name={`Eplanet International — ${f.branch}`}>
+                <RegisterForm name={`Eplanet International — ${f.branch}`} embedSlug={embed ? f.slug : undefined}>
                   <input type="hidden" name="slug" value={f.slug} />
                   {preview && <input type="hidden" name="preview" value="1" />}
+                  {embed && <><input type="hidden" name="embed" value="1" /><input type="hidden" name="page" value={page} /></>}
                   <div className="absolute -left-[9999px] h-px w-px overflow-hidden" aria-hidden="true">
                     <label>Website<input name="website" tabIndex={-1} autoComplete="off" /></label>
                   </div>
