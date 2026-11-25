@@ -18,7 +18,7 @@ export default async function EmailPack({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   const acc = await loadApplicationForUser(user, id);
   if (!acc || !acc.adm_status) notFound();
-  const [a, docs, routes, box] = await Promise.all([
+  const [a, docs, routes, box, prior] = await Promise.all([
     q1<{ ref: string; student: string; first_name: string; dob: string | null; nationality: string | null; email: string | null; phone: string | null; partner: string | null; partner_email: string | null;
          course: string | null; level: string | null; intake: string | null; destination: string | null; student_id_at_provider: string | null }>(
       `select a.ref, c.first_name || ' ' || coalesce(c.last_name,'') student, c.first_name, c.dob, c.nationality, c.email, c.phone, p.name partner, p.email partner_email,
@@ -31,7 +31,9 @@ export default async function EmailPack({ params }: { params: Promise<{ id: stri
       `select r.id, r.route_kind, v.name via, r.email, r.method, r.preferred from partner_routes r left join partners v on v.id=r.via_partner_id
          join applications a on a.partner_id=r.partner_id where a.id=$1 and r.active order by r.preferred desc, (r.method='email') desc, r.id`, [id]),
     getMailbox(),
+    q1<{ n: number }>("select count(*)::int n from application_submissions where application_id=$1 and outcome <> 'withdrawn'", [id]),
   ]);
+  const alreadySubmitted = (prior?.n ?? 0) > 0;
   if (!a) notFound();
   const emailRoute = routes.find((r) => r.method === "email" && r.email) ?? null;
   const to = emailRoute?.email ?? a.partner_email ?? "";
@@ -88,7 +90,8 @@ export default async function EmailPack({ params }: { params: Promise<{ id: stri
               <p className="border-t border-line px-5 py-3 text-xs text-slate">Up to 20 MB in total. Offer letters, CoEs and visa grants are left out.</p>
             </Card>
             <Card>
-              <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="record" defaultChecked className="mt-1" /> Record this as the submission to {a.partner ?? "the institution"} (by email)</label>
+              <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="record" defaultChecked={!alreadySubmitted} className="mt-1" /> Record this as the submission to {a.partner ?? "the institution"} (by email)</label>
+              {alreadySubmitted && <p className="mt-1 text-xs text-slate">A submission is already recorded on this application, so this is unticked. Tick it only if this email is a new submission.</p>}
               {routes.length > 0 && (
                 <Field label="Route" htmlFor="route_id" className="mt-3">
                   <select className="select" id="route_id" name="route_id" defaultValue={emailRoute?.id ?? ""}><option value="">Direct to the institution</option>{routes.map((r) => <option key={r.id} value={r.id}>{ROUTE_LABEL[r.route_kind]}{r.via ? `: ${r.via}` : ""} ({METHOD_LABEL[r.method].toLowerCase()})</option>)}</select>
