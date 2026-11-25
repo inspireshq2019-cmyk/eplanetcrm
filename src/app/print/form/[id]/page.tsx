@@ -12,8 +12,8 @@ export default async function FormPoster({ params }: { params: Promise<{ id: str
   const u = await requirePermission("forms.manage");
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
-  const f = await q1<{ slug: string; branch_id: number; title: string; intro: string | null; event_date: string | null; event_time: string | null; venue: string | null; branch: string; phone: string | null }>(
-    `select f.slug, f.branch_id, f.title, f.intro, to_char(f.event_date,'YYYY-MM-DD') event_date, f.event_time, f.venue, b.name branch, b.phone
+  const f = await q1<{ slug: string; kind: string; branch_id: number; title: string; intro: string | null; event_date: string | null; event_time: string | null; venue: string | null; branch: string; phone: string | null }>(
+    `select f.slug, f.kind, f.branch_id, f.title, f.intro, to_char(f.event_date,'YYYY-MM-DD') event_date, f.event_time, f.venue, b.name branch, b.phone
        from lead_forms f join branches b on b.id=f.branch_id where f.id=$1`, [Number(id)]);
   if (!f || !canSeeBranch(u, f.branch_id)) notFound();
   const url = `${await publicBase()}/f/${f.slug}`;
@@ -31,7 +31,7 @@ export default async function FormPoster({ params }: { params: Promise<{ id: str
           {f.intro && <p className="mx-auto max-w-lg text-slate">{f.intro}</p>}
         </div>
         <div className="grid justify-items-center gap-3">
-          <p className="rounded-full bg-red px-6 py-2 font-display text-2xl font-bold uppercase tracking-wide text-white">Scan to register</p>
+          <p className="rounded-full bg-red px-6 py-2 font-display text-2xl font-bold uppercase tracking-wide text-white">{f.kind === "walk_in" ? "Scan to check in" : "Scan to register"}</p>
           <div className="w-72 [&>svg]:h-auto [&>svg]:w-full" role="img" aria-label="QR code" dangerouslySetInnerHTML={{ __html: svg }} />
           <p className="text-sm text-slate">Open your phone camera and point it at the code.<br />Or type: <span className="font-mono font-semibold text-ink">{url.replace(/^https?:\/\//, "")}</span></p>
         </div>

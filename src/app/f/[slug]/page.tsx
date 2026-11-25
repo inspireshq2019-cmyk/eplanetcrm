@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { q1 } from "@/lib/db";
 import { date } from "@/lib/format";
-import { consentText, DESTINATIONS, EDU_LEVELS, fieldModes, INTAKE_CHOICES, isOpen, LEVELS, STANDARD_FIELDS, type FormRow } from "@/lib/forms";
+import { consentText, VISIT_REASONS, DESTINATIONS, EDU_LEVELS, fieldModes, INTAKE_CHOICES, isOpen, LEVELS, STANDARD_FIELDS, type FormRow } from "@/lib/forms";
 import { EmbedSize, RegisterForm } from "./register-form";
 
 type PublicForm = FormRow & { branch: string; timezone: string; phone: string | null; country_code: string };
@@ -10,7 +10,7 @@ type PublicForm = FormRow & { branch: string; timezone: string; phone: string | 
 async function load(slug: string) {
   if (!/^[a-z0-9]{6,12}$/.test(slug)) return null;
   return q1<PublicForm>(
-    `select f.id, f.branch_id, f.slug, f.title, f.intro, to_char(f.event_date,'YYYY-MM-DD') event_date, f.event_time, f.venue, f.fields, f.questions,
+    `select f.id, f.branch_id, f.slug, f.title, f.kind, f.intro, to_char(f.event_date,'YYYY-MM-DD') event_date, f.event_time, f.venue, f.fields, f.questions,
             f.owner_id, f.follow_up, f.thank_you, f.active, to_char(f.closes_on,'YYYY-MM-DD') closes_on, b.name branch, b.timezone, b.phone, b.country_code
        from lead_forms f join branches b on b.id=f.branch_id where f.slug=$1`, [slug]);
 }
@@ -68,7 +68,7 @@ export default async function PublicForm({ params, searchParams }: { params: Pro
                 <div className="py-6 text-center"><p className="font-display text-xl font-bold text-navy">Registration has closed</p>
                   <p className="mt-1 text-slate">Please speak to the Eplanet team{f.phone ? ` or call ${f.phone}` : ""}.</p></div>
               ) : (
-                <RegisterForm name={`Eplanet International — ${f.branch}`} embedSlug={embed ? f.slug : undefined}>
+                <RegisterForm name={`Eplanet International — ${f.branch}`} embedSlug={embed ? f.slug : undefined} walkIn={f.kind === "walk_in" && !embed}>
                   <input type="hidden" name="slug" value={f.slug} />
                   {preview && <input type="hidden" name="preview" value="1" />}
                   {embed && <><input type="hidden" name="embed" value="1" /><input type="hidden" name="page" value={page} /></>}
@@ -81,6 +81,12 @@ export default async function PublicForm({ params, searchParams }: { params: Pro
                   <Row k="phone" label="Mobile number (WhatsApp if you have it)" required error={`Please enter a mobile number we can call${PHONE_HINT[f.country_code] ? `, ${PHONE_HINT[f.country_code]}` : ""}.`}>
                     <input className="input h-11" type="tel" inputMode="tel" name="phone" autoComplete="tel" maxLength={30} placeholder={PHONE_HINT[f.country_code]} aria-labelledby="phone-label" required />
                   </Row>
+                  {f.kind === "walk_in" && !embed && <Row k="reason" label="Why are you visiting today?" required error="Please choose why you're visiting today.">
+                    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-labelledby="reason-label">{VISIT_REASONS.map((r) => (
+                      <label key={r} className="flex min-h-11 items-center gap-2 rounded-xl border border-line bg-white px-3 text-sm has-[:checked]:border-navy has-[:checked]:bg-sky">
+                        <input type="radio" name="reason" value={r} /> {r}</label>))}
+                    </div>
+                  </Row>}
                   {on("email") && <Row k="email" label={label("email")} required={req("email")} error="Please check your email address.">
                     <input className="input h-11" type="email" inputMode="email" name="email" autoComplete="email" maxLength={150} aria-labelledby="email-label" />
                   </Row>}

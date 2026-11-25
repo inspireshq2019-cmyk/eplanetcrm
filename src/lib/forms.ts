@@ -23,8 +23,11 @@ export type Question = { label: string; type: "text" | "choice"; options: string
 export type FormRow = {
   id: number; branch_id: number; slug: string; title: string; intro: string | null; event_date: string | null; event_time: string | null; venue: string | null;
   fields: Partial<Record<StandardKey, FieldMode>>; questions: Question[]; owner_id: string | null; follow_up: boolean; thank_you: string | null;
-  active: boolean; closes_on: string | null;
+  active: boolean; closes_on: string | null; kind: "event" | "walk_in";
 };
+
+/** Why someone has come into the office (walk-in forms). */
+export const VISIT_REASONS = ["New enquiry", "Counselling appointment", "Document submission", "IELTS / PTE class", "Visa update", "Payment", "Parent meeting", "Other"];
 
 export const fieldModes = (f: FormRow["fields"]) => ({ ...DEFAULT_FIELDS, ...f });
 

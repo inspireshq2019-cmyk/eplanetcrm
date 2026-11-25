@@ -10,8 +10,8 @@ export const metadata = { title: "Event forms" };
 export default async function Forms() {
   const u = await requirePermission("forms.manage");
   const params: unknown[] = [];
-  const rows = await q<{ id: number; title: string; event_date: string | null; venue: string | null; branch: string; active: boolean; closes_on: string | null; n: number; new_leads: number; last: string | null }>(
-    `select f.id, f.title, to_char(f.event_date,'YYYY-MM-DD') event_date, f.venue, b.name branch, f.active, to_char(f.closes_on,'YYYY-MM-DD') closes_on,
+  const rows = await q<{ id: number; title: string; event_date: string | null; venue: string | null; branch: string; active: boolean; closes_on: string | null; kind: string; n: number; new_leads: number; last: string | null }>(
+    `select f.id, f.title, to_char(f.event_date,'YYYY-MM-DD') event_date, f.venue, b.name branch, f.active, to_char(f.closes_on,'YYYY-MM-DD') closes_on, f.kind,
             (select count(*)::int from form_submissions s where s.form_id=f.id) n,
             (select count(*)::int from form_submissions s where s.form_id=f.id and s.status='created') new_leads,
             (select max(created_at) from form_submissions s where s.form_id=f.id) last
@@ -20,14 +20,14 @@ export default async function Forms() {
   const today = new Date().toISOString().slice(0, 10);
   return (
     <>
-      <PageHeader title="Event forms" subtitle="Registration forms for fairs, seminars and visits. Students scan a QR code to register." actions={<Link className="btn btn-primary" href="/forms/new">New form</Link>} />
+      <PageHeader title="Event forms" subtitle="Forms for fairs, seminars, the website and office walk-ins. Students scan a QR code and fill them in on their phone." actions={<Link className="btn btn-primary" href="/forms/new">New form</Link>} />
       <Card pad={false}>
         {rows.length ? (
           <TableWrap><table className="tbl">
             <thead><tr><th>Form</th><th>Event date</th><th>Branch</th><th className="text-right">Registrations</th><th className="text-right">New leads</th><th>Status</th></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.id}>
-                <td><Link className="font-semibold text-navy" href={`/forms/${r.id}`}>{r.title}</Link>{r.venue && <div className="text-xs text-slate">{r.venue}</div>}</td>
+                <td><Link className="font-semibold text-navy" href={`/forms/${r.id}`}>{r.title}</Link>{r.kind === "walk_in" ? <div className="text-xs text-slate">Reception QR: office walk-ins</div> : r.venue && <div className="text-xs text-slate">{r.venue}</div>}</td>
                 <td className="whitespace-nowrap">{r.event_date ? date(r.event_date) : "—"}</td>
                 <td>{r.branch}</td>
                 <td className="tnum text-right">{r.n}</td>

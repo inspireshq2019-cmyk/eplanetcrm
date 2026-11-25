@@ -16,7 +16,7 @@ export function EmbedSize({ slug }: { slug: string }) {
   return null;
 }
 
-export function RegisterForm({ children, name, embedSlug }: { children: ReactNode; name: string; embedSlug?: string }) {
+export function RegisterForm({ children, name, embedSlug, walkIn }: { children: ReactNode; name: string; embedSlug?: string; walkIn?: boolean }) {
   const [state, action, pending] = useActionState<RegisterResult, FormData>(register, null);
   // Tell the website page an enquiry was sent, so it can count it (e.g. as a Meta Pixel "Lead"). Nothing personal is passed.
   useEffect(() => {
@@ -28,7 +28,7 @@ export function RegisterForm({ children, name, embedSlug }: { children: ReactNod
         <span className="grid size-14 place-items-center rounded-full bg-ok-tint text-ok" aria-hidden="true">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12l5 5L20 6" /></svg>
         </span>
-        <p className="font-display text-2xl font-bold text-navy">{embedSlug ? "Thank you" : "You\u2019re registered"}</p>
+        <p className="font-display text-2xl font-bold text-navy">{embedSlug ? "Thank you" : walkIn ? "You\u2019re checked in" : "You\u2019re registered"}</p>
         <p className="max-w-sm text-slate">{state.ok}</p>
         <p className="text-sm text-slate">{name}</p>
       </div>
@@ -46,7 +46,7 @@ export function RegisterForm({ children, name, embedSlug }: { children: ReactNod
       {state?.error && <p role="alert" className="rounded-xl bg-red-tint px-4 py-3 text-sm text-red-dark">{state.error}</p>}
       <style>{Object.keys(fe).map((k) => `[data-field="${k}"] .field-error{display:block}[data-field="${k}"] .input,[data-field="${k}"] .select{border-color:var(--color-red)}`).join("")}</style>
       {children}
-      <button type="submit" className="btn btn-primary h-12 text-base" disabled={pending}>{pending ? (embedSlug ? "Sending…" : "Registering…") : embedSlug ? "Send enquiry" : "Register"}</button>
+      <button type="submit" className="btn btn-primary h-12 text-base" disabled={pending}>{pending ? (embedSlug ? "Sending…" : walkIn ? "Checking in…" : "Registering…") : embedSlug ? "Send enquiry" : walkIn ? "Check in" : "Register"}</button>
     </form>
   );
 }

@@ -6,6 +6,8 @@ import { ActionForm, Submit } from "@/components/action-form";
 import { Card, Empty, Field, PageHeader } from "@/components/ui";
 import { time } from "@/lib/format";
 import { checkIn, moveCheckin } from "./actions";
+import { can } from "@/lib/auth";
+import { AutoRefresh } from "@/components/auto-refresh";
 
 export const metadata = { title: "Office check-in" };
 
@@ -16,11 +18,12 @@ export default async function CheckinPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const branches = await visibleBranches(user);
   const branch = branches.find((b) => b.id === Number(sp.branch)) ?? branches.find((b) => b.id === user.primaryBranchId) ?? branches[0];
-  const [rows, staff] = await Promise.all([
+  const [rows, staff, kiosk] = await Promise.all([
     q<Row>(`select c.id, c.visitor_name, c.phone, c.purpose, c.status, c.arrived_at, c.started_at, c.completed_at, c.contact_id, u.name host
               from checkins c left join users u on u.id=c.host_id
              where c.branch_id=$1 and (c.arrived_at at time zone $2)::date = (now() at time zone $2)::date order by c.arrived_at`, [branch.id, branch.timezone]),
     visibleStaff(user),
+    q<{ id: number; title: string }>("select id, title from lead_forms where branch_id=$1 and kind='walk_in' and active order by created_at desc limit 1", [branch.id]),
   ]);
   const col = (s: string) => rows.filter((r) => r.status === s);
   const mins = (a: string, b?: string | null) => Math.max(0, Math.round(((b ? new Date(b) : new Date()).getTime() - new Date(a).getTime()) / 60000));
@@ -54,6 +57,16 @@ export default async function CheckinPage({ searchParams }: { searchParams: Prom
           <form className="flex gap-2"><select className="select" name="branch" defaultValue={branch.id} aria-label="Branch">{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select><button className="btn">Show</button></form>
         ) : null} />
 
+      <AutoRefresh seconds={30} />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-white px-4 py-3 text-sm">
+        {kiosk[0] ? <>
+          <span><b>Self check-in is on.</b> Visitors who scan the reception QR code appear under Waiting by themselves (this page updates every 30 seconds).</span>
+          <span className="flex gap-2"><a className="btn btn-sm" href={`/print/form/${kiosk[0].id}`} target="_blank" rel="noopener">Print QR poster</a>{can(user, "forms.manage") && <Link className="btn btn-sm" href={`/forms/${kiosk[0].id}`}>Form and visitors</Link>}</span>
+        </> : <>
+          <span><b>Let visitors check themselves in.</b> Put a QR code at reception: visitors fill in their details on their phone, new ones become walk-in leads, and everyone appears here under Waiting.</span>
+          {can(user, "forms.manage") && <Link className="btn btn-sm btn-navy" href="/forms/new?kind=walk_in">Set up the reception QR</Link>}
+        </>}
+      </div>
       <Card title="Check in a visitor" className="mb-6">
         <ActionForm action={checkIn} resetOnSuccess className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] md:items-end">
           <input type="hidden" name="branch_id" value={branch.id} />

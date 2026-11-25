@@ -4,16 +4,28 @@ import { fieldModes, STANDARD_FIELDS, type FormRow } from "@/lib/forms";
 import { saveForm } from "./actions";
 
 /** Create or edit a registration form. Name and mobile are always asked. */
-export function FormBuilder({ form, branches, staff, defaultBranch }: {
-  form?: FormRow; branches: { id: number; name: string }[]; staff: { id: string; name: string; primary_branch_id: number }[]; defaultBranch: number;
+export function FormBuilder({ form, branches, staff, defaultBranch, defaultKind = "event" }: {
+  defaultKind?: "event" | "walk_in"; form?: FormRow; branches: { id: number; name: string }[]; staff: { id: string; name: string; primary_branch_id: number }[]; defaultBranch: number;
 }) {
   const modes = fieldModes(form?.fields ?? {});
   const qs = form?.questions ?? [];
   return (
     <ActionForm action={saveForm} className="grid gap-6">
       {form && <input type="hidden" name="id" value={form.id} />}
+      <style>{".walkin-only{display:none}form:has(#kind_walk_in:checked) .event-only{display:none}form:has(#kind_walk_in:checked) .walkin-only{display:block}"}</style>
+      <section className="card grid gap-3 p-5">
+        <h2 className="font-display text-lg font-semibold text-navy">What is this form for?</h2>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line p-3 text-sm has-[:checked]:border-navy has-[:checked]:bg-sky">
+            <input type="radio" name="kind" id="kind_event" value="event" defaultChecked={(form?.kind ?? defaultKind) === "event"} className="mt-1" />
+            <span><b>An event, fair or the website</b><span className="block text-slate">Students register; each becomes a lead.</span></span></label>
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line p-3 text-sm has-[:checked]:border-navy has-[:checked]:bg-sky">
+            <input type="radio" name="kind" id="kind_walk_in" value="walk_in" defaultChecked={(form?.kind ?? defaultKind) === "walk_in"} className="mt-1" />
+            <span><b>Office walk-ins (reception QR)</b><span className="block text-slate">Visitors scan at reception, fill in the form and join the check-in queue. New visitors become walk-in leads.</span></span></label>
+        </div>
+      </section>
       <section className="card grid gap-4 p-5 sm:grid-cols-2">
-        <h2 className="font-display text-lg font-semibold text-navy sm:col-span-2">The event</h2>
+        <h2 className="font-display text-lg font-semibold text-navy sm:col-span-2"><span className="event-only">The event</span><span className="walkin-only">The form</span></h2>
         <Field label="Title *" htmlFor="title" className="sm:col-span-2" hint="Students see this at the top of the form. For the website, e.g. &ldquo;Free study abroad consultation&rdquo;.">
           <input className="input" id="title" name="title" required maxLength={150} defaultValue={form?.title} placeholder="e.g. Australia & UK Education Fair, Dhaka" />
         </Field>
@@ -23,10 +35,11 @@ export function FormBuilder({ form, branches, staff, defaultBranch }: {
         <Field label="Branch *" htmlFor="branch_id" hint="Registrations become leads in this branch.">
           <select className="select" id="branch_id" name="branch_id" defaultValue={form?.branch_id ?? defaultBranch}>{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
         </Field>
-        <Field label="Venue" htmlFor="venue"><input className="input" id="venue" name="venue" maxLength={200} defaultValue={form?.venue ?? ""} placeholder="e.g. Radisson Blu, Dhaka" /></Field>
-        <Field label="Event date" htmlFor="event_date"><input className="input" type="date" id="event_date" name="event_date" defaultValue={form?.event_date ?? ""} /></Field>
-        <Field label="Time" htmlFor="event_time"><input className="input" id="event_time" name="event_time" maxLength={60} defaultValue={form?.event_time ?? ""} placeholder="e.g. 10am – 5pm" /></Field>
-        <Field label="Stop taking registrations after" htmlFor="closes_on" hint="Leave empty to keep it open until you close it.">
+        <p className="walkin-only text-sm text-slate sm:col-span-2">Title example: &ldquo;Welcome to Eplanet Uttara: please check in&rdquo;. Visitors are also asked the reason for their visit.</p>
+        <Field label="Venue" htmlFor="venue" className="event-only"><input className="input" id="venue" name="venue" maxLength={200} defaultValue={form?.venue ?? ""} placeholder="e.g. Radisson Blu, Dhaka" /></Field>
+        <Field label="Event date" htmlFor="event_date" className="event-only"><input className="input" type="date" id="event_date" name="event_date" defaultValue={form?.event_date ?? ""} /></Field>
+        <Field label="Time" htmlFor="event_time" className="event-only"><input className="input" id="event_time" name="event_time" maxLength={60} defaultValue={form?.event_time ?? ""} placeholder="e.g. 10am – 5pm" /></Field>
+        <Field label="Stop taking registrations after" htmlFor="closes_on" className="event-only" hint="Leave empty to keep it open until you close it.">
           <input className="input" type="date" id="closes_on" name="closes_on" defaultValue={form?.closes_on ?? ""} />
         </Field>
       </section>

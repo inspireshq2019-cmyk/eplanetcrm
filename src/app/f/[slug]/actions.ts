@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { addLead } from "@/lib/ad-leads";
 import { q1, tx } from "@/lib/db";
 import { date } from "@/lib/format";
-import { consentText, DESTINATIONS, EDU_LEVELS, fieldModes, INTAKE_CHOICES, isOpen, LEVELS, type FormRow, type RegisterResult } from "@/lib/forms";
+import { consentText, VISIT_REASONS, DESTINATIONS, EDU_LEVELS, fieldModes, INTAKE_CHOICES, isOpen, LEVELS, type FormRow, type RegisterResult } from "@/lib/forms";
 import { sha256 } from "@/lib/secret-box";
 
 
@@ -12,7 +12,7 @@ import { sha256 } from "@/lib/secret-box";
 export async function register(_: RegisterResult, f: FormData): Promise<RegisterResult> {
   const slug = String(f.get("slug") ?? "");
   const form = await q1<FormRow & { branch: string; timezone: string; country_code: string }>(
-    `select f.id, f.branch_id, f.slug, f.title, f.event_date::text, f.fields, f.questions, f.owner_id, f.follow_up, f.thank_you, f.active, f.closes_on::text,
+    `select f.id, f.branch_id, f.slug, f.title, f.kind, f.event_date::text, f.fields, f.questions, f.owner_id, f.follow_up, f.thank_you, f.active, f.closes_on::text,
             b.name branch, b.timezone, b.country_code
        from lead_forms f join branches b on b.id=f.branch_id where f.slug=$1`, [slug]);
   if (!form) return { error: "This form no longer exists." };
@@ -20,7 +20,10 @@ export async function register(_: RegisterResult, f: FormData): Promise<Register
   if (!isOpen(form, today)) return { error: "Registration for this event has closed. Please speak to the Eplanet team." };
   // Sent from the form shown inside a page of the Eplanet website, rather than from a QR code at an event.
   const web = f.get("embed") === "1";
-  const thanks = form.thank_you || (web ? "Thank you for your enquiry. An Eplanet counsellor will contact you soon." : "Thank you for registering. An Eplanet counsellor will contact you soon.");
+  // A walk-in form: the QR code at reception. The visitor also joins today's check-in queue.
+  const walkIn = form.kind === "walk_in" && !web;
+  const thanks = form.thank_you || (walkIn ? "Thank you, you're checked in. Please take a seat and a counsellor will be with you shortly."
+    : web ? "Thank you for your enquiry. An Eplanet counsellor will contact you soon." : "Thank you for registering. An Eplanet counsellor will contact you soon.");
   if (String(f.get("website") ?? "")) return { ok: thanks }; // hidden field only bots fill in
   if (f.get("preview") === "1") return { ok: `Preview only: nothing was saved. Students will see: “${thanks}”` };
 
@@ -61,6 +64,8 @@ export async function register(_: RegisterResult, f: FormData): Promise<Register
     if (qq.required && !v) errors[`q${i}`] = "Please answer this.";
     if (v) extra.push([qq.label, v]);
   });
+  const reason = walkIn ? str("reason", 60) : "";
+  if (walkIn && !VISIT_REASONS.includes(reason)) errors.reason = "Please choose why you're visiting today.";
   if (f.get("consent") !== "on") errors.consent = "Please tick this box so we can contact you.";
   if (Object.keys(errors).length) return { error: "Please check the highlighted answers.", fieldErrors: errors };
 
@@ -75,7 +80,7 @@ export async function register(_: RegisterResult, f: FormData): Promise<Register
 
   const pageRaw = String(f.get("page") ?? "").slice(0, 300);
   const page = web && /^https?:\/\/[^\s]+$/.test(pageRaw) ? pageRaw : "";
-  const about = web ? `website form “${form.title}”` : `event form “${form.title}”${form.event_date ? ` (${date(form.event_date)})` : ""}`;
+  const about = walkIn ? `walk-in form at the ${form.branch} office` : web ? `website form “${form.title}”` : `event form “${form.title}”${form.event_date ? ` (${date(form.event_date)})` : ""}`;
   const answers: [string, string][] = [
     ...(eduLabel ? [["Last completed education", eduLabel] as [string, string]] : []),
     ...(english ? [["English test", english] as [string, string]] : []),
@@ -83,14 +88,29 @@ export async function register(_: RegisterResult, f: FormData): Promise<Register
     ...extra,
     ...(message ? [["Question for Eplanet", message] as [string, string]] : []),
     ...(page ? [["Sent from website page", page] as [string, string]] : []),
+    ...(reason ? [["Reason for visit", reason] as [string, string]] : []),
   ];
   await tx(async (db) => {
     const r = await addLead(db, form.branch_id,
       { channel: "form", full: name, email, phone: phoneRaw, city, answers, destinations: dest, level: levelOk || null, intake: intakeOk || null },
-      { source: web ? "website" : "event", about, tags: [web ? "website" : "event", `form-${form.slug}`], ownerId: form.owner_id,
-        consent: `${web ? "Sent an enquiry through the" : "Registered on the"} ${about} and agreed: ${consentText(form.branch)}`,
-        task: form.follow_up ? { title: (n, existing) => `${existing ? "Follow up" : "Call"} ${n}: ${web ? "website enquiry" : `registered for ${form.title}`}`, due: "1 day", priority: "normal" } : null });
+      { source: walkIn ? "walk_in" : web ? "website" : "event", about, tags: [walkIn ? "walk-in" : web ? "website" : "event", `form-${form.slug}`], ownerId: form.owner_id,
+        consent: `${walkIn ? "Checked in through the" : web ? "Sent an enquiry through the" : "Registered on the"} ${about} and agreed: ${consentText(form.branch)}`,
+        // A walk-in is being seen in the office now, so no call task.
+        task: form.follow_up && !walkIn ? { title: (n, existing) => `${existing ? "Follow up" : "Call"} ${n}: ${web ? "website enquiry" : `registered for ${form.title}`}`, due: "1 day", priority: "normal" } : null });
     await db.query("insert into form_submissions(form_id,contact_id,status,ip_hash) values($1,$2,$3,$4)", [form.id, r.contactId, r.status, ipHash]);
+    if (walkIn) {
+      // Into today's queue at reception, once: scanning twice doesn't add them twice.
+      const c = (await db.query<{ name: string; phone: string | null; owner_id: string | null; branch_id: number }>(
+        "select trim(first_name || ' ' || coalesce(last_name,'')) name, phone, owner_id, branch_id from contacts where id=$1", [r.contactId])).rows[0];
+      const already = await db.query(
+        `select 1 from checkins where contact_id=$1 and branch_id=$2 and status in ('waiting','attending') and (arrived_at at time zone $3)::date = (now() at time zone $3)::date`,
+        [r.contactId, form.branch_id, form.timezone]);
+      if (!already.rowCount) {
+        await db.query("insert into checkins(branch_id,contact_id,visitor_name,phone,purpose,host_id) values($1,$2,$3,$4,$5,$6)",
+          [form.branch_id, r.contactId, c?.name || name, c?.phone ?? phoneRaw, `${reason} (self check-in)`, c?.branch_id === form.branch_id ? c.owner_id : null]);
+        await db.query("insert into activities(contact_id,kind,body) values($1,'checkin',$2)", [r.contactId, `Checked in at the ${form.branch} office by scanning the QR code: ${reason}.`]);
+      }
+    }
   });
   return { ok: thanks };
 }

@@ -48,17 +48,18 @@ export async function saveForm(_: ActionResult, f: FormData): Promise<ActionResu
     if (!o) return { error: "Choose a counsellor who works in this branch." };
     ownerId = o.id;
   }
+  const kind = f.get("kind") === "walk_in" ? "walk_in" : "event";
   const vals = [branchId, title, s(f, "intro", 600) || null, eventDate, s(f, "event_time", 60) || null, s(f, "venue", 200) || null,
-    JSON.stringify(fields), JSON.stringify(questions), ownerId, f.get("follow_up") === "on", s(f, "thank_you", 300) || null, closesOn];
+    JSON.stringify(fields), JSON.stringify(questions), ownerId, f.get("follow_up") === "on", s(f, "thank_you", 300) || null, closesOn, kind];
   let formId = id;
   if (id) {
-    await q(`update lead_forms set branch_id=$2,title=$3,intro=$4,event_date=$5,event_time=$6,venue=$7,fields=$8,questions=$9,owner_id=$10,follow_up=$11,thank_you=$12,closes_on=$13,updated_at=now() where id=$1`, [id, ...vals]);
+    await q(`update lead_forms set branch_id=$2,title=$3,intro=$4,event_date=$5,event_time=$6,venue=$7,fields=$8,questions=$9,owner_id=$10,follow_up=$11,thank_you=$12,closes_on=$13,kind=$14,updated_at=now() where id=$1`, [id, ...vals]);
     await audit(u, "update", "lead_form", String(id), undefined, { title });
   } else {
     for (let tries = 0; tries < 5 && !formId; tries++) {
       const r = await q1<{ id: number }>(
-        `insert into lead_forms(branch_id,title,intro,event_date,event_time,venue,fields,questions,owner_id,follow_up,thank_you,closes_on,slug,created_by)
-         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) on conflict (slug) do nothing returning id`, [...vals, newSlug(), u.id]);
+        `insert into lead_forms(branch_id,title,intro,event_date,event_time,venue,fields,questions,owner_id,follow_up,thank_you,closes_on,kind,slug,created_by)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) on conflict (slug) do nothing returning id`, [...vals, newSlug(), u.id]);
       formId = r?.id ?? null;
     }
     await audit(u, "create", "lead_form", String(formId), undefined, { title, branch: branchId });

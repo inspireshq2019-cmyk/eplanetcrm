@@ -16,7 +16,7 @@ export default async function FormDetail({ params }: { params: Promise<{ id: str
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
   const form = await q1<FormRow & { branch: string; timezone: string; owner: string | null }>(
-    `select f.id, f.branch_id, f.slug, f.title, f.intro, to_char(f.event_date,'YYYY-MM-DD') event_date, f.event_time, f.venue, f.fields, f.questions, f.owner_id, f.follow_up,
+    `select f.id, f.branch_id, f.slug, f.title, f.kind, f.intro, to_char(f.event_date,'YYYY-MM-DD') event_date, f.event_time, f.venue, f.fields, f.questions, f.owner_id, f.follow_up,
             f.thank_you, f.active, to_char(f.closes_on,'YYYY-MM-DD') closes_on, b.name branch, b.timezone, o.name owner
        from lead_forms f join branches b on b.id=f.branch_id left join users o on o.id=f.owner_id where f.id=$1`, [Number(id)]);
   if (!form || !canSeeBranch(u, form.branch_id)) notFound();

@@ -12,7 +12,7 @@ export default async function EditForm({ params }: { params: Promise<{ id: strin
   const u = await requirePermission("forms.manage");
   const { id } = await params;
   if (!/^\d{1,9}$/.test(id)) notFound();
-  const form = await q1<FormRow>("select id,branch_id,slug,title,intro,to_char(event_date,'YYYY-MM-DD') event_date,event_time,venue,fields,questions,owner_id,follow_up,thank_you,active,to_char(closes_on,'YYYY-MM-DD') closes_on from lead_forms where id=$1", [Number(id)]);
+  const form = await q1<FormRow>("select id,branch_id,slug,title,kind,intro,to_char(event_date,'YYYY-MM-DD') event_date,event_time,venue,fields,questions,owner_id,follow_up,thank_you,active,to_char(closes_on,'YYYY-MM-DD') closes_on from lead_forms where id=$1", [Number(id)]);
   if (!form || !canSeeBranch(u, form.branch_id)) notFound();
   const [branches, staff] = await Promise.all([visibleBranches(u), visibleStaff(u)]);
   return (
