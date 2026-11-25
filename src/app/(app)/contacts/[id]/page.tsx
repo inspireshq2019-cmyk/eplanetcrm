@@ -10,7 +10,11 @@ import { Avatar, Card, Dl, Empty, Field, Notice, PageHeader, TableWrap } from "@
 import { DEST_LABEL, LEVEL_LABEL, SOURCE_LABEL, STAGE_LABEL, TEST_LABEL, VISA_STATUS_LABEL, ago, date, dateTime, daysUntil, money } from "@/lib/format";
 import { addEducation, addNote, addTest, assignOwner, deleteContact, deleteRow, revealSensitive, setStage } from "../actions";
 import { addTask } from "../../tasks/actions";
-import { uploadDocument } from "../../documents/actions";
+import { uploadDocument, verifyDocument } from "../../documents/actions";
+import { cancelUploadLink, createUploadLink, emailUploadLink } from "../upload-link-actions";
+import { CopyField } from "@/components/copy-field";
+import { publicBase } from "@/lib/qr";
+import { LINK_DAYS, STUDENT_DOC_TYPES, tokenOf } from "@/lib/upload-links";
 
 type Contact = {
   id: string; ref: string; stage: string; first_name: string; last_name: string | null; email: string | null; phone: string | null; whatsapp: string | null;
@@ -56,8 +60,8 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
     q<{ id: number; name: string; status: string; test: string }>("select cl.id, cl.name, e.status, cl.test from class_enrolments e join classes cl on cl.id=e.class_id where e.contact_id=$1", [id]),
     can(user, "finance.view") ? q<{ id: string; number: string; kind: string; total: number; paid: number; currency: string; status: string; issue_date: string }>(
       "select id, number, kind, total, paid, currency, status, issue_date from invoices where contact_id=$1 order by issue_date desc", [id]) : Promise.resolve([]),
-    q<{ id: string; doc_type: string; filename: string; size_bytes: number | null; expiry: string | null; verified_at: string | null; created_at: string; uploader: string | null }>(
-      "select d.id, d.doc_type, d.filename, d.size_bytes, d.expiry, d.verified_at, d.created_at, u.name uploader from documents d left join users u on u.id=d.uploaded_by where d.contact_id=$1 order by d.created_at desc", [id]),
+    q<{ id: string; doc_type: string; filename: string; size_bytes: number | null; expiry: string | null; verified_at: string | null; created_at: string; uploader: string | null; by_student: boolean }>(
+      "select d.id, d.doc_type, d.filename, d.size_bytes, d.expiry, d.verified_at, d.created_at, u.name uploader, d.via_link_id is not null by_student from documents d left join users u on u.id=d.uploaded_by where d.contact_id=$1 order by d.created_at desc", [id]),
     q<{ id: number; title: string; due_at: string | null; status: string; assignee: string | null }>(
       "select t.id, t.title, t.due_at, t.status, u.name assignee from tasks t left join users u on u.id=t.assignee_id where t.contact_id=$1 order by t.status, t.due_at nulls last limit 20", [id]),
     q<{ id: number; kind: string; body: string | null; created_at: string; who: string | null }>(
@@ -66,6 +70,14 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
   ]);
 
   const name = `${c.first_name} ${c.last_name ?? ""}`.trim();
+  const linkStaff = user.scope !== "agent" && can(user, "documents.manage");
+  const [links, base] = linkStaff ? await Promise.all([
+    q<{ id: number; token_enc: string; expires_at: string; created_at: string; uploads: number; last_used_at: string | null; app_ref: string | null; by: string | null }>(
+      `select l.id, l.token_enc, l.expires_at, l.created_at, l.uploads, l.last_used_at, a.ref app_ref, u.name by from upload_links l
+         left join applications a on a.id=l.application_id left join users u on u.id=l.created_by
+        where l.contact_id=$1 and l.revoked_at is null and l.expires_at > now() order by l.created_at desc`, [id]),
+    publicBase(),
+  ]) : [[], ""];
   const agent = user.scope === "agent"; // sub-agents see the student's file and applications, not the branch's internal work
   const edit = can(user, "contacts.edit");
   const showPassport = reveal === "1" && can(user, "contacts.sensitive");
@@ -195,8 +207,10 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
                     <td><a href={`/api/documents/${d.id}`} target="_blank" rel="noopener">{d.filename}</a><div className="text-xs text-slate">{d.size_bytes ? `${Math.ceil(d.size_bytes / 1024)} KB` : ""}</div></td>
                     <td className="capitalize">{d.doc_type.replace(/_/g, " ")}</td>
                     <td>{d.expiry ? date(d.expiry) : "—"}</td>
-                    <td className="whitespace-nowrap">{ago(d.created_at)}<div className="text-xs text-slate">{d.uploader}</div></td>
-                    <td>{d.verified_at ? <span className="badge badge-ok">Checked</span> : <span className="badge badge-grey">Not yet</span>}</td>
+                    <td className="whitespace-nowrap">{ago(d.created_at)}<div className="text-xs text-slate">{d.by_student ? "Student (upload link)" : d.uploader}</div></td>
+                    <td>{d.verified_at ? <span className="badge badge-ok">Checked</span> : linkStaff ? (
+                      <form action={verifyDocument} className="flex flex-wrap items-center gap-2"><input type="hidden" name="id" value={d.id} /><span className="badge badge-warn">To check</span><button className="text-xs font-semibold text-navy underline">Mark checked</button></form>
+                    ) : <span className="badge badge-grey">Not yet</span>}</td>
                   </tr>))}</tbody>
               </table></TableWrap>
             ) : <Empty title="No documents yet">Upload passports, transcripts, test results and offer letters here.</Empty>}
@@ -216,6 +230,48 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
               </div>
             )}
           </Card>
+
+          {linkStaff && (
+            <Card title="Student upload link" pad={false}>
+              <div className="p-5">
+                <p className="mb-4 text-sm text-slate">Send {c.first_name} a private link to upload documents from their phone, with no account or password. Uploads arrive here marked &ldquo;To check&rdquo;, and you get a task. If the application is with the admission team, they see the upload too.</p>
+                <ActionForm action={createUploadLink} className="grid gap-3 sm:grid-cols-2">
+                  <input type="hidden" name="contact_id" value={c.id} />
+                  <Field label="For" htmlFor="ul_app" hint="With an application, the student sees its document checklist.">
+                    <select className="select" id="ul_app" name="application_id" defaultValue={apps.find((a) => a.status === "open")?.id ?? ""}>
+                      <option value="">No application: choose documents below</option>
+                      {apps.map((a) => <option key={a.id} value={a.id}>{a.ref} · {a.partner ?? "Application"}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Link works for" htmlFor="ul_days"><select className="select" id="ul_days" name="days" defaultValue="7">{LINK_DAYS.map((d) => <option key={d} value={d}>{d} days</option>)}</select></Field>
+                  <style>{`.ul-types{display:none}form:has(#ul_app option[value=""]:checked) .ul-types{display:grid}`}</style>
+                  <fieldset className="ul-types gap-1.5 sm:col-span-2"><legend className="mb-1 text-sm font-semibold">Documents to ask for</legend>
+                    <div className="flex flex-wrap gap-2">{STUDENT_DOC_TYPES.filter(([k]) => k !== "other").map(([k, l]) => (
+                      <label key={k} className="flex items-center gap-2 rounded-xl border border-line px-3 py-1.5 text-sm has-[:checked]:border-navy has-[:checked]:bg-sky"><input type="checkbox" name="doc_type" value={k} defaultChecked={k === "passport" || k === "transcript"} /> {l}</label>))}
+                    </div>
+                  </fieldset>
+                  <Field label="Message to the student (optional)" htmlFor="ul_note" className="sm:col-span-2"><input className="input" id="ul_note" name="note" maxLength={500} placeholder="e.g. Please upload all pages of your bank statement" /></Field>
+                  <div><Submit className="btn btn-navy" pending="Creating…">Create upload link</Submit></div>
+                </ActionForm>
+              </div>
+              {links.length > 0 && (
+                <ul className="divide-y divide-line border-t border-line">{links.map((l) => {
+                  const url = `${base}/u/${tokenOf(l.token_enc)}`;
+                  const wa = waLink(c.whatsapp ?? c.phone);
+                  return (
+                    <li key={l.id} className="grid gap-3 px-5 py-4">
+                      <p className="text-sm"><b>{l.app_ref ? `For ${l.app_ref}` : "General documents"}</b><span className="text-slate"> · made {ago(l.created_at)}{l.by ? ` by ${l.by}` : ""} · works until {date(l.expires_at)} · {l.uploads} upload{l.uploads === 1 ? "" : "s"}{l.last_used_at ? `, last ${ago(l.last_used_at)}` : ""}</span></p>
+                      <CopyField id={`ul-${l.id}`} label="Private link: send it only to the student" value={url} />
+                      <div className="flex flex-wrap items-center gap-2">
+                        {wa && <a className="btn btn-sm" target="_blank" rel="noopener" href={`${wa}?text=${encodeURIComponent(`Hi ${c.first_name}, please upload your documents for Eplanet International here (private link, works until ${date(l.expires_at)}): ${url}`)}`}>Send on WhatsApp</a>}
+                        {c.email && <ActionForm action={emailUploadLink} className="contents"><input type="hidden" name="id" value={l.id} /><Submit className="btn btn-sm" pending="Sending…">Email to {c.email}</Submit></ActionForm>}
+                        <form action={cancelUploadLink}><input type="hidden" name="id" value={l.id} /><ConfirmButton className="btn btn-sm" confirmLabel="Click again to cancel the link">Cancel link</ConfirmButton></form>
+                      </div>
+                    </li>);
+                })}</ul>
+              )}
+            </Card>
+          )}
 
           {!agent && (visas.length > 0 || can(user, "visa.edit")) && (
             <Card title="Visa cases" actions={can(user, "visa.edit") ? <Link href={`/visa/new?contact=${c.id}`} className="btn btn-sm">Open visa case</Link> : null} pad={false}>

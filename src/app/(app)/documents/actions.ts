@@ -8,23 +8,8 @@ import { can, requireUser } from "@/lib/auth";
 import { loadContactForUser } from "@/lib/access";
 import { q, q1 } from "@/lib/db";
 import { putFile } from "@/lib/storage";
+import { ALLOWED_DOC_MIME as ALLOWED, MAX_DOC_BYTES as MAX, safeFilename, sniffDoc as sniff } from "@/lib/files";
 import type { ActionResult } from "@/components/action-form";
-
-const ALLOWED: Record<string, string> = {
-  "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png",
-  "application/msword": "doc", "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-};
-const MAX = 10 * 1024 * 1024;
-
-// Checks the file's first bytes, so a renamed file can't pass as a PDF or image.
-function sniff(buf: Buffer): string | null {
-  if (buf.subarray(0, 4).toString() === "%PDF") return "application/pdf";
-  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
-  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
-  if (buf.subarray(0, 4).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0]))) return "application/msword";
-  if (buf.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  return null;
-}
 
 export async function uploadDocument(_: ActionResult, f: FormData): Promise<ActionResult> {
   const u = await requireUser();
@@ -47,7 +32,7 @@ export async function uploadDocument(_: ActionResult, f: FormData): Promise<Acti
     return { error: "That visa case doesn't belong to this student." };
   const key = `${c.branch_id}/${contactId}/${randomUUID()}.${ALLOWED[mime]}`;
   await putFile(key, buf, mime);
-  const name = file.name.replace(/[^\w.\- ()]+/g, "_").slice(0, 150);
+  const name = safeFilename(file.name);
   const docType = String(f.get("doc_type") ?? "other").replace(/[^a-z_]/g, "").slice(0, 40) || "other";
   const r = await q<{ id: string }>(
     `insert into documents(contact_id,application_id,visa_case_id,doc_type,filename,storage_key,size_bytes,mime,expiry,uploaded_by)
